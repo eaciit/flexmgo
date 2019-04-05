@@ -2,6 +2,7 @@ package flexmgo
 
 import (
 	"fmt"
+	"io"
 	"strings"
 
 	"git.eaciitapp.com/sebar/dbflex"
@@ -9,7 +10,11 @@ import (
 	"github.com/eaciit/toolkit"
 	. "github.com/eaciit/toolkit"
 
+	"bufio"
+
+	"go.mongodb.org/mongo-driver/bson/primitive"
 	"go.mongodb.org/mongo-driver/mongo"
+	"go.mongodb.org/mongo-driver/mongo/gridfs"
 	"go.mongodb.org/mongo-driver/mongo/options"
 )
 
@@ -159,11 +164,8 @@ func (q *Query) Cursor(m M) df.ICursor {
 		switch cmdObj.(type) {
 		case toolkit.M:
 			cmdParm := cmdObj.(toolkit.M).Get("commandParm")
-			toolkit.Logger().Debugf("count command. %s", toolkit.JsonString(cmdParm))
-			curCommand, err := conn.db.RunCommandCursor(conn.ctx,
-				toolkit.M{}.Set("count", "testrecord"))
+			curCommand, err := conn.db.RunCommandCursor(conn.ctx, cmdParm)
 			if err != nil {
-				toolkit.Logger().Debugf("error on exec count cursor:. %s", err.Error())
 				cursor.SetError(err)
 			} else {
 				cursor.cursor = curCommand
@@ -221,7 +223,7 @@ func (q *Query) Cursor(m M) df.ICursor {
 		)
 
 		qry, err = coll.Find(conn.ctx, where, opt)
-		toolkit.Logger().Debugf("querying data. where:%v error:%v", where, err)
+		//toolkit.Logger().Debugf("querying data. where:%v error:%v", where, err)
 
 		if err != nil {
 			cursor.SetError(err)
@@ -298,13 +300,12 @@ func (q *Query) Execute(m M) (interface{}, error) {
 			_, err := coll.DeleteMany(conn.ctx, where)
 			return nil, err
 		} else {
-			return nil, toolkit.Errorf("delete need to have where clause")
+			return nil, toolkit.Errorf("delete need to have where clause. For delete all data in a collection, please use DropTable instead of Delete")
 		}
 
 	case df.QuerySave:
 		whereSave := M{}
 		datam, err := toolkit.ToM(data)
-		toolkit.Logger().Debugf("M: %s", toolkit.JsonString(data))
 		if err != nil {
 			return nil, toolkit.Errorf("unable to deserialize data: %s", err.Error())
 		}
@@ -318,163 +319,131 @@ func (q *Query) Execute(m M) (interface{}, error) {
 			toolkit.M{}.Set("$set", datam),
 			new(options.UpdateOptions).SetUpsert(true))
 		return nil, err
-	/*
-		case df.QueryCommand:
-			commands, ok := parts[df.QueryCommand]
-			if !ok {
+
+	case df.QueryCommand:
+		commands, ok := parts[df.QueryCommand]
+		if !ok {
+			return nil, toolkit.Errorf("No command")
+		}
+
+		mCommand := commands[0].Value.(toolkit.M)
+		cmd, _ := mCommand["command"]
+
+		switch cmd.(type) {
+		case string:
+			commandTxt := cmd.(string)
+			if commandTxt == "" {
 				return nil, toolkit.Errorf("No command")
 			}
 
-			mCommand := commands[0].Value.(toolkit.M)
-			cmd, _ := mCommand["command"]
-
-			switch cmd.(type) {
-			case string:
-				commandTxt := cmd.(string)
-				if commandTxt == "" {
-					return nil, toolkit.Errorf("No command")
+			var (
+				bucket      *gridfs.Bucket
+				gfsBuffSize int32
+				err         error
+			)
+			if strings.ToLower(commandTxt)[:3] == "gfs" {
+				gfsBuffSize = int32(m.Get("size", 1024).(int))
+				bucketOpt := new(options.BucketOptions)
+				bucketOpt.SetChunkSizeBytes(gfsBuffSize)
+				bucketOpt.SetName(tablename)
+				bucket, err = gridfs.NewBucket(conn.db, bucketOpt)
+				if err != nil {
+					return nil, toolkit.Errorf("error prepare GridFS bucket. %s", err.Error())
 				}
-
-				switch strings.ToLower(commandTxt) {
-				case "gfswrite":
-					var reader *bufio.Reader
-					gfsId, hasId := m["id"]
-					gfsMetadata, hasMetadata := m["metadata"]
-					gfsFileName := m.GetString("name")
-					reader = m.Get("source", nil).(*bufio.Reader)
-					if reader == nil {
-						return nil, toolkit.Errorf("invalid reader")
-					}
-					gfsBuffSize := m.Get("size", 1024).(int)
-
-					buff := make([]byte, gfsBuffSize)
-
-					var gfs *mgo.GridFile
-					var err error
-
-					//-- check if file exist
-					if hasId {
-						gfs, err = q.db.GridFS(tablename).OpenId(gfsId)
-					} else {
-						gfs, err = q.db.GridFS(tablename).Open(gfsFileName)
-					}
-
-					//-- if yes remove
-					if err == nil {
-						gfs.Close()
-						if hasId {
-							q.db.GridFS(tablename).RemoveId(gfsId)
-						} else {
-							q.db.GridFS(tablename).Remove(gfsFileName)
-						}
-					}
-
-					//-- create new one
-					gfs, err = q.db.GridFS(tablename).Create(gfsFileName)
-					if err != nil {
-						return nil, toolkit.Errorf("unable to create GFS %s - %s. %s", tablename, gfsFileName, err.Error())
-					}
-					defer gfs.Close()
-
-					gfs.SetName(gfsFileName)
-					if hasId {
-						gfs.SetId(gfsId)
-					}
-					if hasMetadata {
-						gfs.SetMeta(gfsMetadata)
-					}
-					for {
-						nread, err := reader.Read(buff)
-						if err != nil && err != io.EOF {
-							gfs.Abort()
-							return nil, toolkit.Errorf("unable to read file. %s", err.Error())
-						}
-
-						if nread == 0 {
-							break
-						}
-
-						_, err = gfs.Write(buff[:nread])
-						if err != nil {
-							gfs.Abort()
-							return nil, toolkit.Errorf("unable to write to GFS %s - %s. %s", tablename, gfsFileName, err.Error())
-						}
-					}
-					return gfs.Id(), nil
-
-				case "gfsread":
-					gfsId, hasId := m["id"]
-					gfsFileName := m.GetString("name")
-					dest := m.Get("output", &bufio.Writer{}).(*bufio.Writer)
-					var gfs *mgo.GridFile
-					var err error
-					if hasId {
-						gfs, err = q.db.GridFS(tablename).OpenId(gfsId)
-					} else {
-						gfs, err = q.db.GridFS(tablename).Open(gfsFileName)
-					}
-					if err != nil {
-						return nil, toolkit.Errorf("unable to open GFS %s-%s. %s", tablename, gfsFileName, err.Error())
-					}
-					defer gfs.Close()
-
-					_, err = io.Copy(dest, gfs)
-					if err != nil {
-						if hasId {
-							return nil, toolkit.Errorf("unable to write to output from GFS %s - %s. %s", tablename, gfsId, err.Error())
-						} else {
-							return nil, toolkit.Errorf("unable to write to output from GFS %s - %s. %s", tablename, gfsFileName, err.Error())
-						}
-					}
-
-				case "gfsremove", "gfsdelete":
-					gfsId, hasId := m["id"]
-					gfsFileName := m.GetString("name")
-
-					var err error
-					if hasId && gfsId != "" {
-						err = q.db.GridFS(tablename).RemoveId(gfsId)
-					} else {
-						if gfsFileName == "" {
-							return nil, toolkit.Errorf("either ID or Name is required for GFS removal")
-						}
-						err = q.db.GridFS(tablename).Remove(gfsFileName)
-					}
-					return nil, err
-
-				case "gfstruncate":
-					qry := q.db.GridFS(tablename).Find(nil)
-					iter := qry.Iter()
-					defer iter.Close()
-					for {
-						m := toolkit.M{}
-						if !iter.Next(&m) {
-							break
-						}
-
-						id := m.Get("_id")
-						q.db.GridFS(tablename).RemoveId(id)
-					}
-
-				default:
-					return nil, toolkit.Errorf("Invalid command: %v", commandTxt)
-				}
-
-			case toolkit.M:
-				cmdM := cmd.(toolkit.M)
-				out := toolkit.M{}
-				err := q.db.Run(cmdM, &out)
-				return out, err
-			default:
-				return nil, toolkit.Errorf("Unknown command %v", cmd)
 			}
 
-	*/
+			switch strings.ToLower(commandTxt) {
+			case "gfswrite":
+				var reader io.Reader
+				gfsId, hasId := m["id"]
+				gfsMetadata, hasMetadata := m["metadata"]
+				gfsFileName := m.GetString("name")
+				reader = m.Get("source", nil).(io.Reader)
+				if reader == nil {
+					return nil, toolkit.Errorf("invalid reader")
+				}
 
-	default:
-		return nil, toolkit.Errorf("Unknown command %v", ct)
+				//-- check if file exist, delete if already exist
+				if hasId {
+					bucket.Delete(gfsId)
+				}
+
+				if !hasMetadata {
+					gfsMetadata = toolkit.M{}
+				}
+				uploadOpt := new(options.UploadOptions)
+				uploadOpt.SetMetadata(gfsMetadata)
+				if gfsFileName == "" && hasId {
+					gfsFileName = gfsId.(string)
+				}
+				if gfsFileName == "" {
+					gfsFileName = toolkit.RandomString(32)
+				}
+
+				var objId primitive.ObjectID
+				if hasId {
+					err = bucket.UploadFromStreamWithID(gfsId, gfsFileName, reader, uploadOpt)
+				} else {
+					objId, err = bucket.UploadFromStream(gfsFileName, reader, uploadOpt)
+				}
+				if err != nil {
+					return nil, toolkit.Errorf("error upload file to GridFS. %s", err.Error())
+				}
+				return objId, nil
+
+			case "gfsread":
+				gfsId, hasId := m["id"]
+				gfsFileName := m.GetString("name")
+				if gfsFileName == "" && hasId {
+					gfsFileName = gfsId.(string)
+				}
+				dest := m.Get("output", &bufio.Writer{}).(io.Writer)
+				var err error
+
+				var ds *gridfs.DownloadStream
+				if hasId {
+					ds, err = bucket.OpenDownloadStream(gfsId)
+				} else {
+					ds, err = bucket.OpenDownloadStreamByName(gfsFileName)
+				}
+				defer ds.Close()
+
+				if err != nil {
+					return nil, toolkit.Errorf("unable to open GFS %s-%s. %s", tablename, gfsFileName, err.Error())
+				}
+				defer ds.Close()
+
+				io.Copy(dest, ds)
+				return nil, nil
+
+			case "gfsremove", "gfsdelete":
+				gfsId, hasId := m["id"]
+
+				var err error
+				if hasId && gfsId != "" {
+					err = bucket.Delete(gfsId)
+				}
+				return nil, err
+
+			case "gfstruncate":
+				err := bucket.Drop()
+				return nil, err
+
+			default:
+				return nil, toolkit.Errorf("Invalid command: %v", commandTxt)
+			}
+
+		case toolkit.M:
+			//cmdM := cmd.(toolkit.M)
+			//out := toolkit.M{}
+			//err := conn.db.RunCommand(cmdM, &out)
+			return nil, nil
+
+		default:
+			return nil, toolkit.Errorf("Unknown command %v", cmd)
+		}
+
 	}
-
 	return nil, nil
 }
 

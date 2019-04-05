@@ -1,7 +1,9 @@
 package flexmgo
 
 import (
+	"fmt"
 	"io"
+	"reflect"
 
 	"git.eaciitapp.com/sebar/dbflex"
 	"github.com/eaciit/toolkit"
@@ -52,6 +54,36 @@ func (cr *Cursor) Fetch(out interface{}) error {
 		return toolkit.Errorf("unable to decode output. %s", err.Error())
 	}
 
+	return nil
+}
+
+func (cr *Cursor) Fetchs(result interface{}, n int) error {
+	if cr.Error() != nil {
+		return toolkit.Errorf("unable to fetch data. %s", cr.Error())
+	}
+
+	v := reflect.TypeOf(result).Elem().Elem()
+	ivs := reflect.MakeSlice(reflect.SliceOf(v), 0, 0)
+
+	read := 0
+	for {
+		if !cr.cursor.Next(cr.conn.ctx) {
+			break
+		}
+
+		iv := reflect.New(v).Interface()
+		err := cr.cursor.Decode(iv)
+		if err != nil {
+			return fmt.Errorf("unable to decode cursor data. %s", err.Error())
+		}
+		ivs = reflect.Append(ivs, reflect.ValueOf(iv).Elem())
+
+		read++
+		if n != 0 && read == n {
+			break
+		}
+	}
+	reflect.ValueOf(result).Elem().Set(ivs)
 	return nil
 }
 

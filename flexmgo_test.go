@@ -1,14 +1,16 @@
 package flexmgo_test
 
 import (
-	"context"
+	"bufio"
+	"bytes"
 	"errors"
+	"fmt"
+	"math"
 	"strings"
 	"testing"
 	"time"
 
 	"git.eaciitapp.com/sebar/dbflex/orm"
-	"github.com/eaciit/flexmgo"
 	_ "github.com/eaciit/flexmgo"
 
 	"git.eaciitapp.com/sebar/dbflex"
@@ -21,6 +23,7 @@ const (
 )
 
 func init() {
+	fmt.Println("Debug level is activated")
 	toolkit.Logger().SetLevelStdOut(toolkit.DebugLevel, true)
 }
 
@@ -36,71 +39,9 @@ var tablename = "testrecord"
 
 func TestConnectFail(t *testing.T) {
 	cv.Convey("connect", t, func() {
-		conn, err := dbflex.NewConnectionFromURI("mongodb://my-localhost:21234/db1", nil)
+		conn, err := dbflex.NewConnectionFromURI("mongodb://my-localhost:21234/db1?serverSelectionTimeout=1000", nil)
 		err = conn.Connect()
 		cv.So(err, cv.ShouldNotBeNil)
-	})
-}
-
-func TestClassicRead(t *testing.T) {
-	cv.Convey("connect", t, func() {
-		conn, err := connect()
-		cv.So(err, cv.ShouldBeNil)
-		defer conn.Close()
-
-		cv.Convey("read", func() {
-			ctx := context.Background()
-			db := conn.(*flexmgo.Connection).Mdb()
-			cur, err := db.Collection("appusers").Find(ctx, toolkit.M{"_id": toolkit.M{"$eq": "user03"}})
-			cv.So(err, cv.ShouldBeNil)
-			defer cur.Close(ctx)
-
-			cv.Convey("validate", func() {
-				data := new(struct {
-					ID    string `bson:"_id"`
-					Name  string
-					Email string
-				})
-				i := 0
-				for {
-					if cur.Next(ctx) {
-						i++
-						err := cur.Decode(data)
-						cv.So(err, cv.ShouldBeNil)
-
-						cv.So(data.ID, cv.ShouldEqual, "user03")
-						toolkit.Logger().Debugf("data: %s", toolkit.JsonString(data))
-					} else {
-						break
-					}
-				}
-				cv.So(i, cv.ShouldEqual, 1)
-			})
-		})
-	})
-}
-
-func TestRunCommandClassic(t *testing.T) {
-	//{"count":"testrecord","query":{"_id":{"$eq":"record-id-3"}}}
-	cv.Convey("connect", t, func() {
-		conn, err := connect()
-		cv.So(err, cv.ShouldBeNil)
-		defer conn.Close()
-
-		cv.Convey("runcommand", func() {
-			db := conn.(*flexmgo.Connection).Mdb()
-
-			sr := db.RunCommand(nil, toolkit.M{}.Set("count", "testrecord"))
-			cv.So(sr.Err(), cv.ShouldBeNil)
-
-			countModel := new(struct {
-				N int
-			})
-
-			err = sr.Decode(countModel)
-			cv.So(err, cv.ShouldBeNil)
-			cv.So(countModel.N, cv.ShouldEqual, 10)
-		})
 	})
 }
 
@@ -138,6 +79,74 @@ func TestSaveData(t *testing.T) {
 	})
 }
 
+func TestListData(t *testing.T) {
+	scenarios := map[string]struct {
+		filter    *dbflex.Filter
+		validator func(*Record) bool
+	}{
+		"eq": {
+			dbflex.Eq("_id", "record-id-8"),
+			func(r *Record) bool {
+				return r.ID == "record-id-8"
+			},
+		},
+
+		"ne": {
+			dbflex.Ne("_id", "record-id-8"),
+			func(r *Record) bool {
+				return r.ID != "record-id-8"
+			},
+		},
+
+		"gt": {
+			dbflex.Gt("salary", 1000),
+			func(r *Record) bool {
+				return r.Salary > 1000
+			},
+		},
+
+		"gte": {
+			dbflex.Gte("salary", 1000), func(r *Record) bool {
+				return r.Salary >= 1000
+			},
+		},
+
+		"lt": {dbflex.Lt("age", 80), func(r *Record) bool {
+			return r.Age < 80
+		},
+		},
+		"lte": {dbflex.Lte("age", 90), func(r *Record) bool {
+			return r.Age <= 90
+		},
+		},
+		"range": {dbflex.Range("datejoin",
+			toolkit.String2Date("2000-01-01", "YYYY-mm-dd"),
+			time.Now()), func(r *Record) bool {
+			return r.DateJoin.After(toolkit.String2Date("2000-01-01", "YYYY-mm-dd")) &&
+				r.DateJoin.Before(time.Now())
+		},
+		},
+	}
+
+	for key, sc := range scenarios {
+		cv.Convey("scenario "+key, t, func() {
+			conn, err := connect()
+			cv.So(err, cv.ShouldBeNil)
+			defer conn.Close()
+
+			cv.Convey("fetchs", func() {
+				cur := conn.Cursor(dbflex.From(tablename).Select().Where(sc.filter), nil)
+				defer cur.Close()
+				rs := []*Record{}
+				err := cur.Fetchs(&rs, 0)
+				cv.So(err, cv.ShouldBeNil)
+				cv.So(len(rs), cv.ShouldBeGreaterThan, 0)
+				cv.So(sc.validator(rs[0]), cv.ShouldBeTrue)
+			})
+		})
+	}
+}
+
 func TestUpdateData(t *testing.T) {
 	cv.Convey("connect", t, func() {
 		conn, err := connect()
@@ -166,6 +175,122 @@ func TestUpdateData(t *testing.T) {
 	})
 }
 
+func TestDeleteData(t *testing.T) {
+	cv.Convey("connect", t, func() {
+		conn, err := connect()
+		cv.So(err, cv.ShouldBeNil)
+		defer conn.Close()
+
+		cv.Convey("delete record-5", func() {
+			_, err := conn.Execute(dbflex.From(tablename).
+				Where(dbflex.Eq("_id", "record-id-5")).Delete(), nil)
+			cv.So(err, cv.ShouldBeNil)
+
+			cv.Convey("validate", func() {
+				cur := conn.Cursor(dbflex.From(tablename).Select(), nil)
+				defer cur.Close()
+
+				cv.So(cur.Count(), cv.ShouldEqual, 9)
+			})
+		})
+	})
+}
+
+func TestAggregateData(t *testing.T) {
+	cv.Convey("connect", t, func() {
+		conn, err := connect()
+		cv.So(err, cv.ShouldBeNil)
+		defer conn.Close()
+
+		cv.Convey("aggregate", func() {
+			cmd := dbflex.From(tablename).Aggr(dbflex.NewAggrItem("salary", dbflex.AggrSum, "salary"))
+			cur := conn.Cursor(cmd, nil)
+			cv.So(cur.Error(), cv.ShouldBeNil)
+			defer cur.Close()
+
+			cv.Convey("validate", func() {
+				cur2 := conn.Cursor(dbflex.From(tablename).Select(), nil)
+				defer cur2.Close()
+
+				total := float64(0)
+				for {
+					r := new(Record)
+					if err := cur2.Fetch(r); err == nil {
+						total += r.Salary
+					} else {
+						break
+					}
+				}
+
+				aggrModel := new(struct{ Salary float64 })
+				cur.Fetch(aggrModel)
+
+				cv.So(math.Abs(aggrModel.Salary-total), cv.ShouldBeLessThan, 1)
+				toolkit.Logger().Debugf("total is: %v", total)
+			})
+		})
+	})
+}
+
+func TestDropTable(t *testing.T) {
+	cv.Convey("connect", t, func() {
+		conn, err := connect()
+		cv.So(err, cv.ShouldBeNil)
+		defer conn.Close()
+
+		cv.Convey("drop table", func() {
+			err := conn.DropTable(tablename)
+			cv.So(err, cv.ShouldBeNil)
+		})
+	})
+}
+
+func TestGridFsUpdate(t *testing.T) {
+	cv.Convey("preparing file", t, func() {
+		data := []byte(toolkit.RandomString(512))
+		conn, _ := connect()
+		defer conn.Close()
+
+		cv.Convey("writing to grid", func() {
+			buff := bytes.NewReader([]byte(data))
+			reader := bufio.NewReader(buff)
+
+			cmd := dbflex.From("fs").Command("GfsWrite")
+			metadata := toolkit.M{}.Set("data", "ini adalah meta")
+			_, err := conn.Execute(cmd, toolkit.M{}.
+				Set("id", "doc1").
+				Set("metadata", metadata).
+				Set("source", reader))
+			cv.So(err, cv.ShouldBeNil)
+
+			cv.Convey("reading from grid", func() {
+				var buff bytes.Buffer
+				writer := bufio.NewWriter(&buff)
+
+				cmd := dbflex.From("fs").Command("gfsread")
+				_, err := conn.Execute(cmd, toolkit.M{}.
+					Set("id", "doc1").
+					Set("output", writer))
+				cv.So(err, cv.ShouldBeNil)
+				cv.So(string(data), cv.ShouldEqual, string(buff.Bytes()))
+
+				cv.Convey("delete grid", func() {
+					cmd := dbflex.From("fs").Command("gfsdelete")
+					_, err := conn.Execute(cmd, toolkit.M{}.Set("id", "doc1"))
+					cv.So(err, cv.ShouldBeNil)
+				})
+			})
+		})
+	})
+}
+
+/*
+TO DO
+- Command Cursor
+- Command Exec
+- ChangeStream
+*/
+
 func connect() (dbflex.IConnection, error) {
 	if conn, err := dbflex.NewConnectionFromURI(connTxt, nil); err == nil {
 		if err = conn.Connect(); err == nil {
@@ -182,7 +307,7 @@ func connect() (dbflex.IConnection, error) {
 type Record struct {
 	orm.DataModelBase `bson:"-" json:"-" ecname:"-"`
 	ID                string `bson:"_id" json:"_id" ecname:"_id"`
-	Title             string `bson:"name" json:"name" ecname:"name"`
+	Title             string
 	Age               int
 	Salary            float64
 	DateJoin          time.Time

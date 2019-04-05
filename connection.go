@@ -2,6 +2,7 @@ package flexmgo
 
 import (
 	"context"
+	"strings"
 	"time"
 
 	"git.eaciitapp.com/sebar/dbflex"
@@ -24,7 +25,7 @@ func (c *Connection) Connect() error {
 	opts := options.Client().ApplyURI(connURI)
 	//opts.SetConnectTimeout(5 * time.Second)
 	//opts.SetSocketTimeout(3 * time.Second)
-	opts.SetServerSelectionTimeout(3 * time.Second)
+	//opts.SetServerSelectionTimeout(3 * time.Second)
 	if c.User != "" {
 		opts.SetAuth(options.Credential{
 			Username:   c.User,
@@ -32,23 +33,33 @@ func (c *Connection) Connect() error {
 			AuthSource: "admin",
 		})
 	}
-	toolkit.Logger().Debugf("opts: %s", toolkit.JsonString(opts))
+
+	for k, v := range c.Config {
+		klow := strings.ToLower(k)
+		switch klow {
+		case "serverselectiontimeout":
+			opts.SetServerSelectionTimeout(
+				time.Duration(toolkit.ToInt(v, toolkit.RoundingAuto)) * time.Millisecond)
+		}
+	}
+
+	//toolkit.Logger().Debugf("opts: %s", toolkit.JsonString(opts))
 	client, err := mongo.NewClient(opts)
 	if err != nil {
 		return err
 	}
 
-	toolkit.Logger().Debug("client generated: OK")
+	//toolkit.Logger().Debug("client generated: OK")
 	if c.ctx == nil {
 		c.ctx = context.Background()
 	}
 
-	toolkit.Logger().Debug("context generated: OK")
+	//toolkit.Logger().Debug("context generated: OK")
 	if err = client.Connect(c.ctx); err != nil {
 		return err
 	}
 
-	toolkit.Logger().Debug("client connected: OK")
+	//toolkit.Logger().Debug("client connected: OK")
 	if err = client.Ping(c.ctx, nil); err != nil {
 		return err
 	}
@@ -86,6 +97,10 @@ func (c *Connection) NewQuery() dbflex.IQuery {
 	q.SetConnection(c)
 
 	return q
+}
+
+func (c *Connection) DropTable(name string) error {
+	return c.db.Collection(name).Drop(c.ctx)
 }
 
 /*
