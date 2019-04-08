@@ -470,7 +470,7 @@ func (q *Query) Execute(m M) (interface{}, error) {
 				return nil, toolkit.Errorf("unablet to run command. %s. Command: %s",
 					sr.Err().Error(), toolkit.JsonString(cmdM))
 			}
-			return nil, nil
+			return sr, nil
 
 		default:
 			return nil, toolkit.Errorf("Unknown command %v", cmd)
