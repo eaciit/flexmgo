@@ -4,6 +4,7 @@ import (
 	"fmt"
 	"io"
 	"strings"
+	"time"
 
 	"git.eaciitapp.com/sebar/dbflex"
 	df "git.eaciitapp.com/sebar/dbflex"
@@ -163,8 +164,8 @@ func (q *Query) Cursor(m M) df.ICursor {
 		cmdObj, _ := mCmd["command"]
 		switch cmdObj.(type) {
 		case toolkit.M:
-			cmdParm := cmdObj.(toolkit.M).Get("commandParm")
-			curCommand, err := conn.db.RunCommandCursor(conn.ctx, cmdParm)
+			//cmdParm := cmdObj.(toolkit.M).Get("commandParm")
+			curCommand, err := conn.db.RunCommandCursor(conn.ctx, cmdObj)
 			if err != nil {
 				cursor.SetError(err)
 			} else {
@@ -429,14 +430,46 @@ func (q *Query) Execute(m M) (interface{}, error) {
 				err := bucket.Drop()
 				return nil, err
 
+			case "watch":
+				watchFn := m.Get("fn", nil)
+				if watchFn == nil {
+					return nil, fmt.Errorf("watch need a func(toolkit.M)")
+				}
+
+				opt := options.ChangeStream()
+				opt.SetBatchSize(1024)
+				opt.SetMaxAwaitTime(24 * time.Hour)
+
+				toolkit.Logger().Debugf("prepare to wacth %s", tablename)
+				cs, err := coll.Watch(conn.ctx, []toolkit.M{}, opt)
+				if err != nil {
+					toolkit.Logger().Debugf("watch %s has error", tablename, err.Error())
+					return nil, err
+				}
+				toolkit.Logger().Debugf("watch %s is currently running", tablename)
+
+				go func() {
+					defer cs.Close(conn.ctx)
+					for cs.Next(conn.ctx) {
+						data := toolkit.M{}
+						if err = cs.Decode(&data); err != nil {
+							continue
+						}
+
+						watchFn.(func(toolkit.M))(data)
+					}
+				}()
 			default:
 				return nil, toolkit.Errorf("Invalid command: %v", commandTxt)
 			}
 
 		case toolkit.M:
-			//cmdM := cmd.(toolkit.M)
-			//out := toolkit.M{}
-			//err := conn.db.RunCommand(cmdM, &out)
+			cmdM := cmd.(toolkit.M)
+			sr := conn.db.RunCommand(conn.ctx, cmdM)
+			if sr.Err() != nil {
+				return nil, toolkit.Errorf("unablet to run command. %s. Command: %s",
+					sr.Err().Error(), toolkit.JsonString(cmdM))
+			}
 			return nil, nil
 
 		default:

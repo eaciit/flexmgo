@@ -175,6 +175,38 @@ func TestUpdateData(t *testing.T) {
 	})
 }
 
+/*
+func TestWatch(t *testing.T) {
+	cv.Convey("change stream", t, func() {
+		conn, err := connect()
+		cv.So(err, cv.ShouldBeNil)
+		defer conn.Close()
+
+		changed := make(chan toolkit.M)
+		cmd := dbflex.From(tablename).Command("watch")
+		_, err = conn.Execute(cmd, toolkit.M{}.
+			Set("fn", func(data toolkit.M) {
+				changed <- data
+				close(changed)
+			}))
+		cv.So(err, cv.ShouldBeNil)
+
+		cv.Convey("validate", func() {
+			m := toolkit.M{}
+			cmdGet := dbflex.From(tablename).Select().Where(dbflex.Eq("_id", "record-id-5"))
+			err := conn.Cursor(cmdGet, nil).SetCloseAfterFetch().Fetch(&m)
+			cv.So(err, cv.ShouldBeNil)
+
+			m.Set("title", "Test Change Stream")
+			_, err = conn.Execute(dbflex.From(tablename).Save(), toolkit.M{}.Set("data", m))
+
+			changedData := <-changed
+			cv.So(changedData.GetString("title"), cv.ShouldEqual, "Test Change Stream")
+		})
+	})
+}
+*/
+
 func TestDeleteData(t *testing.T) {
 	cv.Convey("connect", t, func() {
 		conn, err := connect()
