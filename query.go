@@ -34,7 +34,7 @@ func (q *Query) BuildFilter(f *df.Filter) (interface{}, error) {
 	} else if f.Op == df.OpNe {
 		fm.Set(f.Field, M{}.Set("$ne", f.Value))
 	} else if f.Op == df.OpContains {
-		fs := f.Value.([]string)
+		fs := f.Value.([]interface{})
 		if len(fs) > 1 {
 			bfs := []interface{}{}
 			for _, ff := range fs {
