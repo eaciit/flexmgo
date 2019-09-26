@@ -34,7 +34,7 @@ func (q *Query) BuildFilter(f *df.Filter) (interface{}, error) {
 	} else if f.Op == df.OpNe {
 		fm.Set(f.Field, M{}.Set("$ne", f.Value))
 	} else if f.Op == df.OpContains {
-		fs := f.Value.([]string)
+		fs := f.Value.([]interface{})
 		if len(fs) > 1 {
 			bfs := []interface{}{}
 			for _, ff := range fs {
@@ -251,13 +251,17 @@ func (q *Query) Execute(m M) (interface{}, error) {
 	ct := q.Config(df.ConfigKeyCommandType, "N/A")
 	switch ct {
 	case df.QueryInsert:
-		return coll.InsertOne(conn.ctx, data)
+		res, err := coll.InsertOne(conn.ctx, data)
+		if err != nil {
+			return nil, err
+		}
+		return res.InsertedID, nil
 
 	case df.QueryUpdate:
 		var err error
 		if hasWhere {
-			//singleupdate := m.Get("singleupdate", true).(bool)
-			singleupdate := false
+			singleupdate := m.Get("singleupdate", false).(bool)
+			//singleupdate := false
 			if !singleupdate {
 				//-- get the field for update
 				updateqi, _ := parts[df.QueryUpdate]
@@ -285,11 +289,13 @@ func (q *Query) Execute(m M) (interface{}, error) {
 				}
 				//updatedData := toolkit.M{}.Set("$set", dataS)
 
-				_, err = coll.UpdateMany(conn.ctx, where, dataS,
-					new(options.UpdateOptions).SetUpsert(true))
+				_, err = coll.UpdateMany(conn.ctx, where,
+					toolkit.M{}.Set("$set", dataS),
+					new(options.UpdateOptions).SetUpsert(false))
 			} else {
-				_, err = coll.UpdateOne(conn.ctx, where, data,
-					new(options.UpdateOptions).SetUpsert(true))
+				_, err = coll.UpdateOne(conn.ctx, where,
+					toolkit.M{}.Set("$set", data),
+					new(options.UpdateOptions).SetUpsert(false))
 			}
 			return nil, err
 		} else {
