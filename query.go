@@ -1,13 +1,13 @@
 package flexmgo
 
 import (
+	"context"
 	"fmt"
 	"io"
 	"strings"
-	"time"
 
-	"git.eaciitapp.com/sebar/dbflex"
-	df "git.eaciitapp.com/sebar/dbflex"
+	"git.kanosolution.net/kano/dbflex"
+	df "git.kanosolution.net/kano/dbflex"
 	"github.com/eaciit/toolkit"
 	. "github.com/eaciit/toolkit"
 
@@ -30,7 +30,7 @@ func (q *Query) BuildCommand() (interface{}, error) {
 func (q *Query) BuildFilter(f *df.Filter) (interface{}, error) {
 	fm := M{}
 	if f.Op == df.OpEq {
-		fm.Set(f.Field, M{}.Set("$eq", f.Value))
+		fm.Set(f.Field, f.Value)
 	} else if f.Op == df.OpNe {
 		fm.Set(f.Field, M{}.Set("$ne", f.Value))
 	} else if f.Op == df.OpContains {
@@ -146,32 +146,85 @@ func (q *Query) Cursor(m M) df.ICursor {
 		}
 
 		if hasWhere {
+			//fmt.Println("filters:", toolkit.JsonString(where))
 			pipes = append(pipes, M{}.Set("$match", where))
 		}
 		pipes = append(pipes, M{}.Set("$group", aggrExpression))
-		cur, err := coll.Aggregate(conn.ctx, pipes, new(options.AggregateOptions).SetAllowDiskUse(true))
+		var cur *mongo.Cursor
+		err := wrapTx(conn, func(ctx context.Context) error {
+			var err error
+			cur, err = coll.Aggregate(ctx, pipes, new(options.AggregateOptions).SetAllowDiskUse(true))
+			return err
+		})
 		if err != nil {
 			cursor.SetError(err)
 		} else {
 			cursor.cursor = cur
 			cursor.conn = conn
-			cursor.countParm = toolkit.M{}.
-				Set("count", tablename).
-				Set("query", where)
+			if len(where) == 0 {
+				cursor.countParm = toolkit.M{}.
+					Set("count", tablename).
+					Set("query", where)
+			} else {
+				cursor.countParm = toolkit.M{}.
+					Set("count", tablename).
+					Set("query", where)
+			}
 		}
 	} else if hasCommand {
 		mCmd := commandParts[0].Value.(toolkit.M)
 		cmdObj, _ := mCmd["command"]
 		switch cmdObj.(type) {
 		case toolkit.M:
-			//cmdParm := cmdObj.(toolkit.M).Get("commandParm")
-			curCommand, err := conn.db.RunCommandCursor(conn.ctx, cmdObj)
+			var curCommand *mongo.Cursor
+			err := wrapTx(conn, func(ctx context.Context) error {
+				var err error
+				curCommand, err = conn.db.RunCommandCursor(ctx, cmdObj)
+				return err
+			})
 			if err != nil {
 				cursor.SetError(err)
 			} else {
 				cursor.cursor = curCommand
 			}
 			return cursor
+
+		case string:
+			switch cmdObj.(string) {
+			case "aggregate":
+				pipes := []toolkit.M{}
+				if hasWhere && len(where) > 0 {
+					pipes = append(pipes, M{}.Set("$match", where))
+				}
+				if pipeM, hasPipe := m["pipe"]; hasPipe {
+					var (
+						pipeMs []toolkit.M
+						//ok     bool
+						cur *mongo.Cursor
+						err error
+					)
+
+					toolkit.Serde(pipeM, &pipeMs, "")
+					if len(pipeMs) > 0 {
+						if _, has := pipeMs[0]["$text"]; has {
+							pipes = pipeMs
+						} else {
+							pipes = append(pipes, pipeMs...)
+						}
+					}
+
+					//fmt.Println("pipe:", toolkit.JsonString(pipes), "\n")
+					if cur, err = coll.Aggregate(conn.ctx, pipes, new(options.AggregateOptions).SetAllowDiskUse(true)); err != nil {
+						cursor.SetError(err)
+						return cursor
+					}
+
+					cursor.cursor = cur
+					cursor.conn = conn
+					cursor.countParm = nil
+					return cursor
+				}
+			}
 
 		default:
 			cursor.SetError(toolkit.Errorf("invalid command %v", cmdObj))
@@ -197,25 +250,42 @@ func (q *Query) Cursor(m M) df.ICursor {
 	} else {
 		opt := options.Find()
 		if items, ok := parts[df.QuerySelect]; ok {
-			fields := items[0].Value.([]string)
-			if len(fields) > 0 {
-				opt.SetProjection(fields)
+			if fields, ok := items[0].Value.([]string); ok {
+				if len(fields) > 0 {
+					projection := toolkit.M{}
+					for _, field := range fields {
+						projection.Set(field, 1)
+					}
+					opt.SetProjection(projection)
+				}
 			}
 		}
 
 		if items, ok := parts[df.QueryOrder]; ok {
 			sortKeys := items[0].Value.([]string)
-			opt.SetSort(sortKeys)
+			sortM := toolkit.M{}
+			for _, key := range sortKeys {
+				if key[0] == '-' {
+					sortM.Set(key[1:], -1)
+				} else {
+					sortM.Set(key, 1)
+				}
+			}
+
+			if len(sortM) > 0 {
+				opt.SetSort(sortM)
+			}
 		}
 
 		if items, ok := parts[df.QuerySkip]; ok {
-			skip := items[0].Value.(int64)
+			skip := int64(items[0].Value.(int))
 			opt.SetSkip(skip)
 		}
 
 		if items, ok := parts[df.QueryTake]; ok {
-			take := items[0].Value.(int64)
-			opt.SetLimit(take)
+			if take, ok := items[0].Value.(int); ok {
+				opt.SetLimit(int64(take))
+			}
 		}
 
 		var (
@@ -223,8 +293,12 @@ func (q *Query) Cursor(m M) df.ICursor {
 			err error
 		)
 
-		qry, err = coll.Find(conn.ctx, where, opt)
-		//toolkit.Logger().Debugf("querying data. where:%v error:%v", where, err)
+		err = wrapTx(conn, func(ctx context.Context) error {
+			var err error
+			//fmt.Println(toolkit.JsonString(opt.Sort))
+			qry, err = coll.Find(ctx, where, opt)
+			return err
+		})
 
 		if err != nil {
 			cursor.SetError(err)
@@ -232,7 +306,11 @@ func (q *Query) Cursor(m M) df.ICursor {
 		}
 
 		cursor.cursor = qry
-		cursor.countParm = toolkit.M{}.Set("count", tablename).Set("query", where)
+		if len(where) == 0 {
+			cursor.countParm = toolkit.M{}.Set("count", tablename)
+		} else {
+			cursor.countParm = toolkit.M{}.Set("count", tablename).Set("query", where)
+		}
 		cursor.conn = conn
 	}
 	return cursor
@@ -268,7 +346,7 @@ func (q *Query) Execute(m M) (interface{}, error) {
 				updatevals := updateqi[0].Value.([]string)
 
 				var dataM toolkit.M
-				dataM, err = ToM(data)
+				dataM, err = toolkit.ToMTag(data, conn.FieldNameTag())
 				dataS := M{}
 				if err != nil {
 					return nil, err
@@ -289,13 +367,19 @@ func (q *Query) Execute(m M) (interface{}, error) {
 				}
 				//updatedData := toolkit.M{}.Set("$set", dataS)
 
-				_, err = coll.UpdateMany(conn.ctx, where,
-					toolkit.M{}.Set("$set", dataS),
-					new(options.UpdateOptions).SetUpsert(false))
+				err = wrapTx(conn, func(ctx context.Context) error {
+					_, err := coll.UpdateMany(ctx, where,
+						toolkit.M{}.Set("$set", dataS),
+						new(options.UpdateOptions).SetUpsert(false))
+					return err
+				})
 			} else {
-				_, err = coll.UpdateOne(conn.ctx, where,
-					toolkit.M{}.Set("$set", data),
-					new(options.UpdateOptions).SetUpsert(false))
+				err = wrapTx(conn, func(ctx context.Context) error {
+					_, err := coll.UpdateOne(ctx, where,
+						toolkit.M{}.Set("$set", data),
+						new(options.UpdateOptions).SetUpsert(false))
+					return err
+				})
 			}
 			return nil, err
 		} else {
@@ -304,7 +388,10 @@ func (q *Query) Execute(m M) (interface{}, error) {
 
 	case df.QueryDelete:
 		if hasWhere {
-			_, err := coll.DeleteMany(conn.ctx, where)
+			err := wrapTx(conn, func(ctx context.Context) error {
+				_, err := coll.DeleteMany(ctx, where)
+				return err
+			})
 			return nil, err
 		} else {
 			return nil, toolkit.Errorf("delete need to have where clause. For delete all data in a collection, please use DropTable instead of Delete")
@@ -312,7 +399,7 @@ func (q *Query) Execute(m M) (interface{}, error) {
 
 	case df.QuerySave:
 		whereSave := M{}
-		datam, err := toolkit.ToM(data)
+		datam, err := toolkit.ToMTag(data, conn.FieldNameTag())
 		if err != nil {
 			return nil, toolkit.Errorf("unable to deserialize data: %s", err.Error())
 		}
@@ -322,9 +409,12 @@ func (q *Query) Execute(m M) (interface{}, error) {
 			return nil, toolkit.Error("_id field is required")
 		}
 
-		_, err = coll.UpdateMany(conn.ctx, whereSave,
-			toolkit.M{}.Set("$set", datam),
-			new(options.UpdateOptions).SetUpsert(true))
+		err = wrapTx(conn, func(ctx context.Context) error {
+			_, err := coll.UpdateMany(ctx, whereSave,
+				toolkit.M{}.Set("$set", datam),
+				new(options.UpdateOptions).SetUpsert(true))
+			return err
+		})
 		return nil, err
 
 	case df.QueryCommand:
@@ -425,7 +515,6 @@ func (q *Query) Execute(m M) (interface{}, error) {
 
 			case "gfsremove", "gfsdelete":
 				gfsId, hasId := m["id"]
-
 				var err error
 				if hasId && gfsId != "" {
 					err = bucket.Delete(gfsId)
@@ -436,35 +525,14 @@ func (q *Query) Execute(m M) (interface{}, error) {
 				err := bucket.Drop()
 				return nil, err
 
-			case "watch":
-				watchFn := m.Get("fn", nil)
-				if watchFn == nil {
-					return nil, fmt.Errorf("watch need a func(toolkit.M)")
-				}
-
-				opt := options.ChangeStream()
-				opt.SetBatchSize(1024)
-				opt.SetMaxAwaitTime(24 * time.Hour)
-
-				toolkit.Logger().Debugf("prepare to wacth %s", tablename)
-				cs, err := coll.Watch(conn.ctx, []toolkit.M{}, opt)
+			case "distinct":
+				fieldName := m.GetString("field")
+				vs, err := coll.Distinct(conn.ctx, fieldName, where)
 				if err != nil {
-					toolkit.Logger().Debugf("watch %s has error", tablename, err.Error())
 					return nil, err
 				}
-				toolkit.Logger().Debugf("watch %s is currently running", tablename)
+				return vs, nil
 
-				go func() {
-					defer cs.Close(conn.ctx)
-					for cs.Next(conn.ctx) {
-						data := toolkit.M{}
-						if err = cs.Decode(&data); err != nil {
-							continue
-						}
-
-						watchFn.(func(toolkit.M))(data)
-					}
-				}()
 			default:
 				return nil, toolkit.Errorf("Invalid command: %v", commandTxt)
 			}
@@ -484,6 +552,19 @@ func (q *Query) Execute(m M) (interface{}, error) {
 
 	}
 	return nil, nil
+}
+
+func wrapTx(conn *Connection, fn func(ctx context.Context) error) error {
+	var err error
+	//fmt.Println("Connection in tx", conn.IsTx(), " sess", conn.sess)
+	if conn.sess != nil {
+		err = mongo.WithSession(conn.ctx, conn.sess, func(sc mongo.SessionContext) error {
+			return fn(sc)
+		})
+	} else {
+		err = fn(conn.ctx)
+	}
+	return err
 }
 
 /*

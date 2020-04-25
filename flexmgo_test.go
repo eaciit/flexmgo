@@ -3,17 +3,16 @@ package flexmgo_test
 import (
 	"bufio"
 	"bytes"
-	"errors"
 	"fmt"
 	"math"
 	"strings"
 	"testing"
 	"time"
 
-	"git.eaciitapp.com/sebar/dbflex/orm"
+	"git.kanosolution.net/kano/dbflex/orm"
 	_ "github.com/eaciit/flexmgo"
 
-	"git.eaciitapp.com/sebar/dbflex"
+	"git.kanosolution.net/kano/dbflex"
 	"github.com/eaciit/toolkit"
 	cv "github.com/smartystreets/goconvey/convey"
 )
@@ -162,13 +161,108 @@ func TestUpdateData(t *testing.T) {
 			cv.So(r.Title, cv.ShouldStartWith, "Title is ")
 
 			cv.Convey("update data", func() {
-				_, err = conn.Execute(dbflex.From(tablename).Save(), toolkit.M{}.Set("data", r))
+				_, err = conn.Execute(dbflex.From(tablename).Update("title"),
+					toolkit.M{}.Set("data", r))
 				cv.So(err, cv.ShouldBeNil)
 
 				cv.Convey("vaidate", func() {
 					cur = conn.Cursor(cmdget, nil)
 					count := cur.Count()
 					cv.So(count, cv.ShouldEqual, 1)
+				})
+			})
+		})
+	})
+}
+
+type country struct {
+	ID    string `bson:"_id" json:"_id" ecname:"_id"`
+	Title string
+}
+
+type state struct {
+	ID        string `bson:"_id" json:"_id" ecname:"_id"`
+	Title     string
+	CountryID string
+}
+
+var (
+	countriesTableName = "countries"
+	stateTableName     = "states"
+)
+
+func TestMdbTrx(t *testing.T) {
+	t.Skip()
+	cv.Convey("connect", t, func() {
+		conn, err := connect()
+		cv.So(err, cv.ShouldBeNil)
+		defer conn.Close()
+
+		cv.Convey("insert countries without trx", func() {
+			countries := []*country{
+				&country{"SG", "Singapore"},
+				&country{"ID", "Indonesia"},
+				&country{"MY", "Malaysia"},
+				&country{"IN", "India"},
+			}
+
+			err = nil
+			cmd := dbflex.From(countriesTableName).Save()
+			for _, country := range countries {
+				_, err = conn.Execute(cmd, toolkit.M{}.Set("data", country))
+				if err != nil {
+					break
+				}
+			}
+			cv.So(err, cv.ShouldBeNil)
+
+			cmd = dbflex.From(countriesTableName).Select()
+			cur := conn.Cursor(cmd, nil)
+			cv.So(cur.Error(), cv.ShouldBeNil)
+			defer cur.Close()
+
+			ms := []toolkit.M{}
+			cv.So(cur.Fetchs(&ms, 0), cv.ShouldBeNil)
+			cv.So(len(ms), cv.ShouldEqual, len(countries))
+
+			cv.Convey("insert state with trx", func() {
+				err = conn.BeginTx()
+				cv.So(err, cv.ShouldBeNil)
+
+				states := []*state{
+					&state{"SG", "Singapore", "SG"},
+					&state{"JK", "Jakarta", "ID"},
+					&state{"MB", "Mumbai", "IN"},
+				}
+				cmd := dbflex.From(stateTableName).Save()
+				for _, state := range states {
+					_, err = conn.Execute(cmd, toolkit.M{}.Set("data", state))
+					if err != nil {
+						break
+					}
+				}
+				cv.So(err, cv.ShouldBeNil)
+
+				cmd = dbflex.From(stateTableName).Select()
+				cur := conn.Cursor(cmd, nil)
+				cv.So(cur.Error(), cv.ShouldBeNil)
+				defer cur.Close()
+				ms := []toolkit.M{}
+				cv.So(cur.Fetchs(&ms, 0), cv.ShouldBeNil)
+				cv.So(len(ms), cv.ShouldEqual, len(states))
+
+				cv.Convey("rollback", func() {
+					err = conn.RollBack()
+					//cv.Println("Tx status", conn.IsTx())
+					cv.So(err, cv.ShouldBeNil)
+
+					cmd = dbflex.From(stateTableName).Select()
+					cur := conn.Cursor(cmd, nil)
+					cv.So(cur.Error(), cv.ShouldBeNil)
+					defer cur.Close()
+					ms1 := []toolkit.M{}
+					cv.So(cur.Fetchs(&ms1, 0), cv.ShouldBeNil)
+					cv.So(len(ms1), cv.ShouldEqual, 0)
 				})
 			})
 		})
@@ -326,6 +420,7 @@ TO DO
 func connect() (dbflex.IConnection, error) {
 	if conn, err := dbflex.NewConnectionFromURI(connTxt, nil); err == nil {
 		if err = conn.Connect(); err == nil {
+			conn.SetFieldNameTag("json")
 			return conn, nil
 		} else {
 			return nil, err
@@ -333,7 +428,6 @@ func connect() (dbflex.IConnection, error) {
 	} else {
 		return nil, err
 	}
-	return nil, errors.New("not implemented yet")
 }
 
 type Record struct {
@@ -356,3 +450,18 @@ func (r *Record) GetID() ([]string, []interface{}) {
 func (r *Record) SetID(obj []interface{}) {
 	r.ID = obj[0].(string)
 }
+
+/*
+var demoConfig = {
+    _id: "rs",
+    members: [
+        { _id: 0,
+          host: 'localhost:27017',
+          priority: 10
+        },
+        { _id: 1,
+          host: 'localhost:27018'
+        }
+    ]
+ };
+*/

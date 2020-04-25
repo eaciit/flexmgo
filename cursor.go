@@ -5,7 +5,7 @@ import (
 	"io"
 	"reflect"
 
-	"git.eaciitapp.com/sebar/dbflex"
+	"git.kanosolution.net/kano/dbflex"
 	"github.com/eaciit/toolkit"
 	"go.mongodb.org/mongo-driver/mongo"
 )
@@ -27,9 +27,19 @@ func (cr *Cursor) Close() {
 }
 
 func (cr *Cursor) Count() int {
+	if cr.countParm == nil || len(cr.countParm) == 0 {
+		return 0
+	}
+
+	if cr.countParm.Get("count") == "" {
+		return 0
+	}
+
 	sr := cr.conn.db.RunCommand(cr.conn.ctx, cr.countParm)
 	if sr.Err() != nil {
-		dbflex.Logger().Errorf("unablet to get count. %s", sr.Err().Error())
+		dbflex.Logger().Errorf("unable to get count. %s, countparm: %s",
+			sr.Err().Error(),
+			toolkit.JsonString(cr.countParm))
 		return -1
 	}
 
