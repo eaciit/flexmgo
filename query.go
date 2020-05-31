@@ -163,8 +163,7 @@ func (q *Query) Cursor(m M) df.ICursor {
 			cursor.conn = conn
 			if len(where) == 0 {
 				cursor.countParm = toolkit.M{}.
-					Set("count", tablename).
-					Set("query", where)
+					Set("count", tablename)
 			} else {
 				cursor.countParm = toolkit.M{}.
 					Set("count", tablename).

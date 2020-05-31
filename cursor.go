@@ -40,13 +40,13 @@ func (cr *Cursor) Count() int {
 		dbflex.Logger().Errorf("unable to get count. %s, countparm: %s",
 			sr.Err().Error(),
 			toolkit.JsonString(cr.countParm))
-		return -1
+		return 0
 	}
 
 	countModel := new(struct{ N int })
 	if err := sr.Decode(countModel); err != nil {
 		dbflex.Logger().Errorf("unablet to decode count. %s", sr.Err().Error())
-		return -1
+		return 0
 	}
 	return countModel.N
 }
