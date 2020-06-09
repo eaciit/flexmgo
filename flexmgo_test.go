@@ -10,7 +10,7 @@ import (
 	"time"
 
 	"git.kanosolution.net/kano/dbflex/orm"
-	_ "github.com/eaciit/flexmgo"
+	_ "github.com/ariefdarmawan/flexmgo"
 
 	"git.kanosolution.net/kano/dbflex"
 	"github.com/eaciit/toolkit"
