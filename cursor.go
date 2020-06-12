@@ -20,10 +20,12 @@ type Cursor struct {
 	cursor    *mongo.Cursor
 }
 
-func (cr *Cursor) Close() {
+func (cr *Cursor) Close() error {
+	e := cr.Error()
 	if cr.mc != nil {
 		cr.mc.Close(cr.conn.ctx)
 	}
+	return e
 }
 
 func (cr *Cursor) Count() int {
@@ -51,25 +53,29 @@ func (cr *Cursor) Count() int {
 	return countModel.N
 }
 
-func (cr *Cursor) Fetch(out interface{}) error {
+func (cr *Cursor) Fetch(out interface{}) dbflex.ICursor {
 	if cr.Error() != nil {
-		return toolkit.Errorf("unable to fetch data. %s", cr.Error())
+		cr.SetError(toolkit.Errorf("unable to fetch data. %s", cr.Error()))
+		return cr
 	}
 
 	if neof := cr.cursor.Next(cr.conn.ctx); !neof {
-		return io.EOF
+		cr.SetError(io.EOF)
+		return cr
 	}
 
 	if err := cr.cursor.Decode(out); err != nil {
-		return toolkit.Errorf("unable to decode output. %s", err.Error())
+		cr.SetError(toolkit.Errorf("unable to decode output. %s", err.Error()))
+		return cr
 	}
 
-	return nil
+	return cr
 }
 
-func (cr *Cursor) Fetchs(result interface{}, n int) error {
+func (cr *Cursor) Fetchs(result interface{}, n int) dbflex.ICursor {
 	if cr.Error() != nil {
-		return toolkit.Errorf("unable to fetch data. %s", cr.Error())
+		cr.SetError(toolkit.Errorf("unable to fetch data. %s", cr.Error()))
+		return cr
 	}
 
 	v := reflect.TypeOf(result).Elem().Elem()
@@ -84,7 +90,8 @@ func (cr *Cursor) Fetchs(result interface{}, n int) error {
 		iv := reflect.New(v).Interface()
 		err := cr.cursor.Decode(iv)
 		if err != nil {
-			return fmt.Errorf("unable to decode cursor data. %s", err.Error())
+			cr.SetError(fmt.Errorf("unable to decode cursor data. %s", err.Error()))
+			return cr
 		}
 		ivs = reflect.Append(ivs, reflect.ValueOf(iv).Elem())
 
@@ -94,7 +101,7 @@ func (cr *Cursor) Fetchs(result interface{}, n int) error {
 		}
 	}
 	reflect.ValueOf(result).Elem().Set(ivs)
-	return nil
+	return cr
 }
 
 /*

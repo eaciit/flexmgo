@@ -107,7 +107,7 @@ func (q *Query) Cursor(m M) df.ICursor {
 	tablename := q.Config(df.ConfigKeyTableName, "").(string)
 	coll := conn.db.Collection(tablename)
 
-	parts := q.Config(df.ConfigKeyGroupedQueryItems, df.GroupedQueryItems{}).(df.GroupedQueryItems)
+	parts := q.Config(df.ConfigKeyGroupedQueryItems, df.QueryItems{}).(df.QueryItems)
 	where := q.Config(df.ConfigKeyWhere, M{}).(M)
 	hasWhere := where != nil
 
@@ -118,7 +118,7 @@ func (q *Query) Cursor(m M) df.ICursor {
 
 	if hasAggr {
 		pipes := []M{}
-		items := aggrs[0].Value.([]*df.AggrItem)
+		items := aggrs.Value.([]*df.AggrItem)
 		aggrExpression := M{}
 		for _, item := range items {
 			if item.Op == df.AggrCount {
@@ -132,12 +132,10 @@ func (q *Query) Cursor(m M) df.ICursor {
 		} else {
 			groups := func() M {
 				s := M{}
-				for _, v := range groupby {
-					gs := v.Value.([]string)
-					for _, g := range gs {
-						if strings.TrimSpace(g) != "" {
-							s.Set(strings.Replace(g, ".", "_", -1), "$"+g)
-						}
+				gs := groupby.Value.([]string)
+				for _, g := range gs {
+					if strings.TrimSpace(g) != "" {
+						s.Set(strings.Replace(g, ".", "_", -1), "$"+g)
 					}
 				}
 				return s
@@ -171,7 +169,7 @@ func (q *Query) Cursor(m M) df.ICursor {
 			}
 		}
 	} else if hasCommand {
-		mCmd := commandParts[0].Value.(toolkit.M)
+		mCmd := commandParts.Value.(toolkit.M)
 		cmdObj, _ := mCmd["command"]
 		switch cmdObj.(type) {
 		case toolkit.M:
@@ -249,7 +247,7 @@ func (q *Query) Cursor(m M) df.ICursor {
 	} else {
 		opt := options.Find()
 		if items, ok := parts[df.QuerySelect]; ok {
-			if fields, ok := items[0].Value.([]string); ok {
+			if fields, ok := items.Value.([]string); ok {
 				if len(fields) > 0 {
 					projection := toolkit.M{}
 					for _, field := range fields {
@@ -261,7 +259,7 @@ func (q *Query) Cursor(m M) df.ICursor {
 		}
 
 		if items, ok := parts[df.QueryOrder]; ok {
-			sortKeys := items[0].Value.([]string)
+			sortKeys := items.Value.([]string)
 			sortM := toolkit.M{}
 			for _, key := range sortKeys {
 				if key[0] == '-' {
@@ -277,12 +275,12 @@ func (q *Query) Cursor(m M) df.ICursor {
 		}
 
 		if items, ok := parts[df.QuerySkip]; ok {
-			skip := int64(items[0].Value.(int))
+			skip := int64(items.Value.(int))
 			opt.SetSkip(skip)
 		}
 
 		if items, ok := parts[df.QueryTake]; ok {
-			if take, ok := items[0].Value.(int); ok {
+			if take, ok := items.Value.(int); ok {
 				opt.SetLimit(int64(take))
 			}
 		}
@@ -321,7 +319,7 @@ func (q *Query) Execute(m M) (interface{}, error) {
 	coll := conn.db.Collection(tablename)
 	data := m.Get("data")
 
-	parts := q.Config(df.ConfigKeyGroupedQueryItems, df.GroupedQueryItems{}).(df.GroupedQueryItems)
+	parts := q.Config(df.ConfigKeyGroupedQueryItems, df.QueryItems{}).(df.QueryItems)
 	where := q.Config(df.ConfigKeyWhere, M{}).(M)
 	hasWhere := where != nil
 
@@ -342,7 +340,7 @@ func (q *Query) Execute(m M) (interface{}, error) {
 			if !singleupdate {
 				//-- get the field for update
 				updateqi, _ := parts[df.QueryUpdate]
-				updatevals := updateqi[0].Value.([]string)
+				updatevals := updateqi.Value.([]string)
 
 				var dataM toolkit.M
 				dataM, err = toolkit.ToMTag(data, conn.FieldNameTag())
@@ -422,7 +420,7 @@ func (q *Query) Execute(m M) (interface{}, error) {
 			return nil, toolkit.Errorf("No command")
 		}
 
-		mCommand := commands[0].Value.(toolkit.M)
+		mCommand := commands.Value.(toolkit.M)
 		cmd, _ := mCommand["command"]
 
 		switch cmd.(type) {

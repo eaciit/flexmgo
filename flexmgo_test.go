@@ -137,7 +137,7 @@ func TestListData(t *testing.T) {
 				cur := conn.Cursor(dbflex.From(tablename).Select().Where(sc.filter), nil)
 				defer cur.Close()
 				rs := []*Record{}
-				err := cur.Fetchs(&rs, 0)
+				err := cur.Fetchs(&rs, 0).Error()
 				cv.So(err, cv.ShouldBeNil)
 				cv.So(len(rs), cv.ShouldBeGreaterThan, 0)
 				cv.So(sc.validator(rs[0]), cv.ShouldBeTrue)
@@ -156,13 +156,13 @@ func TestUpdateData(t *testing.T) {
 			r := new(Record)
 			cmdget := dbflex.From(tablename).Select().Where(dbflex.Eq("_id", "record-id-3"))
 			cur := conn.Cursor(cmdget, nil)
-			err := cur.Fetch(r)
+			err := cur.Fetch(r).Error()
 			cv.So(err, cv.ShouldBeNil)
 			cv.So(r.Title, cv.ShouldStartWith, "Title is ")
 
 			cv.Convey("update data", func() {
-				_, err = conn.Execute(dbflex.From(tablename).Update("title"),
-					toolkit.M{}.Set("data", r))
+				cmd := dbflex.From(tablename).Update("title")
+				_, err = conn.Execute(cmd, toolkit.M{}.Set("data", r))
 				cv.So(err, cv.ShouldBeNil)
 
 				cv.Convey("vaidate", func() {
@@ -222,7 +222,7 @@ func TestMdbTrx(t *testing.T) {
 			defer cur.Close()
 
 			ms := []toolkit.M{}
-			cv.So(cur.Fetchs(&ms, 0), cv.ShouldBeNil)
+			cv.So(cur.Fetchs(&ms, 0).Error(), cv.ShouldBeNil)
 			cv.So(len(ms), cv.ShouldEqual, len(countries))
 
 			cv.Convey("insert state with trx", func() {
@@ -248,7 +248,7 @@ func TestMdbTrx(t *testing.T) {
 				cv.So(cur.Error(), cv.ShouldBeNil)
 				defer cur.Close()
 				ms := []toolkit.M{}
-				cv.So(cur.Fetchs(&ms, 0), cv.ShouldBeNil)
+				cv.So(cur.Fetchs(&ms, 0).Error(), cv.ShouldBeNil)
 				cv.So(len(ms), cv.ShouldEqual, len(states))
 
 				cv.Convey("rollback", func() {
@@ -261,7 +261,7 @@ func TestMdbTrx(t *testing.T) {
 					cv.So(cur.Error(), cv.ShouldBeNil)
 					defer cur.Close()
 					ms1 := []toolkit.M{}
-					cv.So(cur.Fetchs(&ms1, 0), cv.ShouldBeNil)
+					cv.So(cur.Fetchs(&ms1, 0).Error(), cv.ShouldBeNil)
 					cv.So(len(ms1), cv.ShouldEqual, 0)
 				})
 			})
@@ -341,7 +341,7 @@ func TestAggregateData(t *testing.T) {
 				total := float64(0)
 				for {
 					r := new(Record)
-					if err := cur2.Fetch(r); err == nil {
+					if err := cur2.Fetch(r).Error(); err == nil {
 						total += r.Salary
 					} else {
 						break
