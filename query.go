@@ -169,14 +169,13 @@ func (q *Query) Cursor(m M) df.ICursor {
 			}
 		}
 	} else if hasCommand {
-		mCmd := commandParts.Value.(toolkit.M)
-		cmdObj, _ := mCmd["command"]
-		switch cmdObj.(type) {
+		cmdValue := commandParts.Value
+		switch cmdValue.(type) {
 		case toolkit.M:
 			var curCommand *mongo.Cursor
 			err := wrapTx(conn, func(ctx context.Context) error {
 				var err error
-				curCommand, err = conn.db.RunCommandCursor(ctx, cmdObj)
+				curCommand, err = conn.db.RunCommandCursor(ctx, cmdValue)
 				return err
 			})
 			if err != nil {
@@ -187,13 +186,13 @@ func (q *Query) Cursor(m M) df.ICursor {
 			return cursor
 
 		case string:
-			switch cmdObj.(string) {
+			switch cmdValue.(string) {
 			case "aggregate":
 				pipes := []toolkit.M{}
 				if hasWhere && len(where) > 0 {
 					pipes = append(pipes, M{}.Set("$match", where))
 				}
-				if pipeM, hasPipe := m["pipe"]; hasPipe {
+				if hasPipe, pipeM := q.Command().HasAttr("CommandParm"); hasPipe {
 					var (
 						pipeMs []toolkit.M
 						//ok     bool
@@ -224,7 +223,7 @@ func (q *Query) Cursor(m M) df.ICursor {
 			}
 
 		default:
-			cursor.SetError(toolkit.Errorf("invalid command %v", cmdObj))
+			cursor.SetError(toolkit.Errorf("invalid command %v", cmdValue))
 			return cursor
 		}
 		/*
@@ -420,12 +419,12 @@ func (q *Query) Execute(m M) (interface{}, error) {
 			return nil, toolkit.Errorf("No command")
 		}
 
-		mCommand := commands.Value.(toolkit.M)
-		cmd, _ := mCommand["command"]
-
-		switch cmd.(type) {
+		//mCommand := commands.Value.(toolkit.M)
+		//cmd, _ :=
+		cmdValue := commands.Value
+		switch cmdValue.(type) {
 		case string:
-			commandTxt := cmd.(string)
+			commandTxt := cmdValue.(string)
 			if commandTxt == "" {
 				return nil, toolkit.Errorf("No command")
 			}
@@ -446,6 +445,9 @@ func (q *Query) Execute(m M) (interface{}, error) {
 				}
 			}
 
+			if hasParm, parm := q.Command().HasAttr("CommandParm"); hasParm {
+				m = parm.(toolkit.M)
+			}
 			switch strings.ToLower(commandTxt) {
 			case "gfswrite":
 				var reader io.Reader
@@ -535,7 +537,7 @@ func (q *Query) Execute(m M) (interface{}, error) {
 			}
 
 		case toolkit.M:
-			cmdM := cmd.(toolkit.M)
+			cmdM := cmdValue.(toolkit.M)
 			sr := conn.db.RunCommand(conn.ctx, cmdM)
 			if sr.Err() != nil {
 				return nil, toolkit.Errorf("unablet to run command. %s. Command: %s",
@@ -544,7 +546,7 @@ func (q *Query) Execute(m M) (interface{}, error) {
 			return sr, nil
 
 		default:
-			return nil, toolkit.Errorf("Unknown command %v", cmd)
+			return nil, toolkit.Errorf("Unknown command %v", cmdValue)
 		}
 
 	}
