@@ -21,8 +21,16 @@ type Connection struct {
 }
 
 func (c *Connection) Connect() error {
+	configString := "?"
+	for k, v := range c.Config {
+		configString += k + "=" + v.(string) + "&"
+	}
+
 	connURI := "mongodb://"
 	connURI += c.Host + "/"
+	connURI += configString
+
+	fmt.Println(connURI)
 
 	opts := options.Client().ApplyURI(connURI)
 	//opts.SetConnectTimeout(5 * time.Second)
