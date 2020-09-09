@@ -30,8 +30,6 @@ func (c *Connection) Connect() error {
 	connURI += c.Host + "/"
 	connURI += configString
 
-	fmt.Println(connURI)
-
 	opts := options.Client().ApplyURI(connURI)
 	//opts.SetConnectTimeout(5 * time.Second)
 	//opts.SetSocketTimeout(3 * time.Second)
