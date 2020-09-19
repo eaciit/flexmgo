@@ -3,7 +3,6 @@ package flexmgo
 import (
 	"fmt"
 	"io"
-	"reflect"
 
 	"git.kanosolution.net/kano/dbflex"
 	"github.com/eaciit/toolkit"
@@ -91,29 +90,56 @@ func (cr *Cursor) Fetchs(result interface{}, n int) dbflex.ICursor {
 		return cr
 	}
 
-	v := reflect.TypeOf(result).Elem().Elem()
-	ivs := reflect.MakeSlice(reflect.SliceOf(v), 0, 0)
+	/*
+		v := reflect.TypeOf(result).Elem().Elem()
+		ivs := reflect.MakeSlice(reflect.SliceOf(v), 0, 0)
 
+			read := 0
+			for {
+				if !cr.cursor.Next(cr.conn.ctx) {
+					break
+				}
+
+				iv := reflect.New(v).Interface()
+				err := cr.cursor.Decode(iv)
+				if err != nil {
+					cr.SetError(fmt.Errorf("unable to decode cursor data. %s", err.Error()))
+					return cr
+				}
+				ivs = reflect.Append(ivs, reflect.ValueOf(iv).Elem())
+
+				read++
+				if n != 0 && read == n {
+					break
+				}
+			}
+			reflect.ValueOf(result).Elem().Set(ivs)
+	*/
 	read := 0
+	ms := []toolkit.M{}
 	for {
 		if !cr.cursor.Next(cr.conn.ctx) {
 			break
 		}
 
-		iv := reflect.New(v).Interface()
-		err := cr.cursor.Decode(iv)
+		m := toolkit.M{}
+		err := cr.cursor.Decode(&m)
 		if err != nil {
 			cr.SetError(fmt.Errorf("unable to decode cursor data. %s", err.Error()))
 			return cr
 		}
-		ivs = reflect.Append(ivs, reflect.ValueOf(iv).Elem())
+		ms = append(ms, m)
 
 		read++
 		if n != 0 && read == n {
 			break
 		}
 	}
-	reflect.ValueOf(result).Elem().Set(ivs)
+	if err := toolkit.Serde(ms, result, ""); err != nil {
+		cr.SetError(fmt.Errorf("unable to decode cursor data. %s", err.Error()))
+		return cr
+	}
+
 	return cr
 }
 
