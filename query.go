@@ -325,7 +325,8 @@ func (q *Query) Execute(m M) (interface{}, error) {
 	ct := q.Config(df.ConfigKeyCommandType, "N/A")
 	switch ct {
 	case df.QueryInsert:
-		res, err := coll.InsertOne(conn.ctx, data)
+		dataM, _ := toolkit.ToMTag(data, conn.FieldNameTag())
+		res, err := coll.InsertOne(conn.ctx, dataM)
 		if err != nil {
 			return nil, err
 		}

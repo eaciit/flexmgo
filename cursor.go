@@ -37,20 +37,27 @@ func (cr *Cursor) Count() int {
 		return 0
 	}
 
-	sr := cr.conn.db.RunCommand(cr.conn.ctx, cr.countParm)
-	if sr.Err() != nil {
-		dbflex.Logger().Errorf("unable to get count. %s, countparm: %s",
-			sr.Err().Error(),
-			toolkit.JsonString(cr.countParm))
-		return 0
-	}
+	tableName := cr.countParm.GetString("count")
+	where := cr.countParm.Get("query", nil)
+	n, _ := cr.conn.db.Collection(tableName).CountDocuments(cr.conn.ctx, where)
+	return int(n)
 
-	countModel := new(struct{ N int })
-	if err := sr.Decode(countModel); err != nil {
-		dbflex.Logger().Errorf("unablet to decode count. %s", sr.Err().Error())
-		return 0
-	}
-	return countModel.N
+	/*
+		sr := cr.conn.db.RunCommand(cr.conn.ctx, cr.countParm)
+		if sr.Err() != nil {
+			dbflex.Logger().Errorf("unable to get count. %s, countparm: %s",
+				sr.Err().Error(),
+				toolkit.JsonString(cr.countParm))
+			return 0
+		}
+
+		countModel := new(struct{ N int })
+		if err := sr.Decode(countModel); err != nil {
+			dbflex.Logger().Errorf("unablet to decode count. %s", sr.Err().Error())
+			return 0
+		}
+		return countModel.N
+	*/
 }
 
 func (cr *Cursor) Fetch(out interface{}) dbflex.ICursor {

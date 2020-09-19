@@ -133,7 +133,7 @@ func TestListData(t *testing.T) {
 			cv.So(err, cv.ShouldBeNil)
 			defer conn.Close()
 
-			cv.Convey("fetchs", func() {
+			cv.Convey("fetch ", func() {
 				cur := conn.Cursor(dbflex.From(tablename).Select().Where(sc.filter), nil)
 				defer cur.Close()
 				rs := []*Record{}
