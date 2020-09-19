@@ -71,7 +71,13 @@ func (cr *Cursor) Fetch(out interface{}) dbflex.ICursor {
 		return cr
 	}
 
-	if err := cr.cursor.Decode(out); err != nil {
+	m := toolkit.M{}
+	if err := cr.cursor.Decode(&m); err != nil {
+		cr.SetError(toolkit.Errorf("unable to decode output. %s", err.Error()))
+		return cr
+	}
+
+	if err := toolkit.Serde(m, out, ""); err != nil {
 		cr.SetError(toolkit.Errorf("unable to decode output. %s", err.Error()))
 		return cr
 	}
