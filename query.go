@@ -13,6 +13,7 @@ import (
 
 	"bufio"
 
+	"go.mongodb.org/mongo-driver/bson"
 	"go.mongodb.org/mongo-driver/bson/primitive"
 	"go.mongodb.org/mongo-driver/mongo"
 	"go.mongodb.org/mongo-driver/mongo/gridfs"
@@ -171,7 +172,7 @@ func (q *Query) Cursor(m M) df.ICursor {
 	} else if hasCommand {
 		cmdValue := commandParts.Value
 		switch cmdValue.(type) {
-		case toolkit.M:
+		case toolkit.M, bson.M:
 			var curCommand *mongo.Cursor
 			err := wrapTx(conn, func(ctx context.Context) error {
 				var err error
@@ -187,12 +188,12 @@ func (q *Query) Cursor(m M) df.ICursor {
 
 		case string:
 			switch cmdValue.(string) {
-			case "aggregate":
+			case "aggregate", "pipe":
 				pipes := []toolkit.M{}
 				if hasWhere && len(where) > 0 {
 					pipes = append(pipes, M{}.Set("$match", where))
 				}
-				if hasPipe, pipeM := q.Command().HasAttr("CommandParm"); hasPipe {
+				if hasPipe, pipeM := q.Command().HasAttr("pipe"); hasPipe {
 					var (
 						pipeMs []toolkit.M
 						//ok     bool
