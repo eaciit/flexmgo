@@ -3,6 +3,7 @@ package flexmgo
 import (
 	"fmt"
 	"io"
+	"reflect"
 	"time"
 
 	"git.kanosolution.net/kano/dbflex"
@@ -78,7 +79,7 @@ func (cr *Cursor) Fetch(out interface{}) dbflex.ICursor {
 	}
 	for mk, mv := range m {
 		// update date value to date
-		if mvs, ok := mv.(string); ok {
+		if mvs, ok := mv.(string); ok && len(mvs) >= 11 {
 			if mvs[4] == '-' && mvs[7] == '-' && mvs[10] == 'T' {
 				if dt, err := time.Parse(time.RFC3339, mvs); err == nil {
 					m.Set(mk, dt)
@@ -86,9 +87,13 @@ func (cr *Cursor) Fetch(out interface{}) dbflex.ICursor {
 			}
 		}
 	}
-	if err := toolkit.Serde(m, out, ""); err != nil {
-		cr.SetError(toolkit.Errorf("unable to decode output. %s", err.Error()))
-		return cr
+	if reflect.ValueOf(m).Type().String() == reflect.Indirect(reflect.ValueOf(out)).Type().String() {
+		reflect.ValueOf(out).Elem().Set(reflect.ValueOf(m))
+	} else {
+		if err := toolkit.Serde(m, out, ""); err != nil {
+			cr.SetError(toolkit.Errorf("unable to decode output. %s", err.Error()))
+			return cr
+		}
 	}
 
 	return cr
@@ -140,10 +145,11 @@ func (cr *Cursor) Fetchs(result interface{}, n int) dbflex.ICursor {
 		}
 		for mk, mv := range m {
 			// update date value to date
-			if mvs, ok := mv.(string); ok {
+			if mvs, ok := mv.(string); ok && len(mvs) >= 11 {
 				if mvs[4] == '-' && mvs[7] == '-' && mvs[10] == 'T' {
 					if dt, err := time.Parse(time.RFC3339, mvs); err == nil {
 						m.Set(mk, dt)
+						//fmt.Println(mk, mvs, dt, m, fmt.Sprintf("%t", m.Get("Created")))
 					}
 				}
 			}
@@ -155,9 +161,13 @@ func (cr *Cursor) Fetchs(result interface{}, n int) dbflex.ICursor {
 			break
 		}
 	}
-	if err := toolkit.Serde(ms, result, ""); err != nil {
-		cr.SetError(fmt.Errorf("unable to decode cursor data. %s", err.Error()))
-		return cr
+	if reflect.ValueOf(ms).Type().String() == reflect.Indirect(reflect.ValueOf(result)).Type().String() {
+		reflect.ValueOf(result).Elem().Set(reflect.ValueOf(ms))
+	} else {
+		if err := toolkit.Serde(ms, result, ""); err != nil {
+			cr.SetError(fmt.Errorf("unable to decode cursor data. %s", err.Error()))
+			return cr
+		}
 	}
 
 	return cr
