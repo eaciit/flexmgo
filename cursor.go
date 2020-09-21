@@ -3,6 +3,7 @@ package flexmgo
 import (
 	"fmt"
 	"io"
+	"time"
 
 	"git.kanosolution.net/kano/dbflex"
 	"github.com/eaciit/toolkit"
@@ -75,7 +76,16 @@ func (cr *Cursor) Fetch(out interface{}) dbflex.ICursor {
 		cr.SetError(toolkit.Errorf("unable to decode output. %s", err.Error()))
 		return cr
 	}
-
+	for mk, mv := range m {
+		// update date value to date
+		if mvs, ok := mv.(string); ok {
+			if mvs[4] == '-' && mvs[7] == '-' && mvs[10] == 'T' {
+				if dt, err := time.Parse(time.RFC3339, mvs); err == nil {
+					m.Set(mk, dt)
+				}
+			}
+		}
+	}
 	if err := toolkit.Serde(m, out, ""); err != nil {
 		cr.SetError(toolkit.Errorf("unable to decode output. %s", err.Error()))
 		return cr
@@ -127,6 +137,16 @@ func (cr *Cursor) Fetchs(result interface{}, n int) dbflex.ICursor {
 		if err != nil {
 			cr.SetError(fmt.Errorf("unable to decode cursor data. %s", err.Error()))
 			return cr
+		}
+		for mk, mv := range m {
+			// update date value to date
+			if mvs, ok := mv.(string); ok {
+				if mvs[4] == '-' && mvs[7] == '-' && mvs[10] == 'T' {
+					if dt, err := time.Parse(time.RFC3339, mvs); err == nil {
+						m.Set(mk, dt)
+					}
+				}
+			}
 		}
 		ms = append(ms, m)
 
