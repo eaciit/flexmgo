@@ -40,8 +40,13 @@ func (cr *Cursor) Count() int {
 
 	tableName := cr.countParm.GetString("count")
 	where := cr.countParm.Get("query", nil)
-	n, _ := cr.conn.db.Collection(tableName).CountDocuments(cr.conn.ctx, where)
-	return int(n)
+	if where == nil {
+		n, _ := cr.conn.db.Collection(tableName).CountDocuments(cr.conn.ctx, toolkit.M{})
+		return int(n)
+	} else {
+		n, _ := cr.conn.db.Collection(tableName).CountDocuments(cr.conn.ctx, where)
+		return int(n)
+	}
 
 	/*
 		sr := cr.conn.db.RunCommand(cr.conn.ctx, cr.countParm)

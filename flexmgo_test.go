@@ -431,8 +431,8 @@ func connect() (dbflex.IConnection, error) {
 }
 
 type Record struct {
-	orm.DataModelBase `bson:"-" json:"-" ecname:"-"`
-	ID                string `bson:"_id" json:"_id" ecname:"_id"`
+	orm.DataModelBase `bson:"-" json:"-"`
+	ID                string `bson:"_id" json:"_id"`
 	Title             string
 	Age               int
 	Salary            float64
