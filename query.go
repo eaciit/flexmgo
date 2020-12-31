@@ -408,9 +408,8 @@ func (q *Query) Execute(m M) (interface{}, error) {
 		}
 
 		err = wrapTx(conn, func(ctx context.Context) error {
-			_, err := coll.UpdateMany(ctx, whereSave,
-				toolkit.M{}.Set("$set", datam),
-				new(options.UpdateOptions).SetUpsert(true))
+			_, err := coll.ReplaceOne(ctx, whereSave, datam,
+				new(options.ReplaceOptions).SetUpsert(true))
 			return err
 		})
 		return nil, err
