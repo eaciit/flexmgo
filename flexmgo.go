@@ -1,6 +1,6 @@
 package flexmgo
 
-import "git.eaciitapp.com/sebar/dbflex"
+import "git.kanosolution.net/kano/dbflex"
 
 func init() {
 	dbflex.RegisterDriver("mongodb", func(si *dbflex.ServerInfo) dbflex.IConnection {
