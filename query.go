@@ -331,6 +331,7 @@ func (q *Query) Execute(m M) (interface{}, error) {
 		if err != nil {
 			return nil, err
 		}
+		dataM.Set("_id", res.InsertedID)
 		return res.InsertedID, nil
 
 	case df.QueryUpdate:

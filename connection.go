@@ -52,6 +52,18 @@ func (c *Connection) Connect() error {
 		case "replicaset":
 			opts.SetReplicaSet(v.(string))
 			//opts.SetWriteConcern()
+
+		case "poolsize":
+			poolSize := toolkit.ToInt(v.(string), toolkit.RoundingAuto)
+			if poolSize > 0 {
+				opts.SetMaxPoolSize(uint64(poolSize))
+			}
+
+		case "idle":
+			idle := toolkit.ToInt(v.(string), toolkit.RoundingAuto)
+			if idle > 0 {
+				opts.SetMaxConnIdleTime(time.Duration(idle) * time.Second)
+			}
 		}
 	}
 
