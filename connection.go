@@ -10,6 +10,8 @@ import (
 	"github.com/eaciit/toolkit"
 	"go.mongodb.org/mongo-driver/mongo"
 	"go.mongodb.org/mongo-driver/mongo/options"
+	"go.mongodb.org/mongo-driver/mongo/readconcern"
+	"go.mongodb.org/mongo-driver/mongo/writeconcern"
 )
 
 type Connection struct {
@@ -75,7 +77,7 @@ func (c *Connection) Connect() error {
 
 	//toolkit.Logger().Debug("client generated: OK")
 	if c.ctx == nil {
-		c.ctx = context.Background()
+		c.ctx = context.TODO()
 	}
 
 	//toolkit.Logger().Debug("context generated: OK")
@@ -128,6 +130,10 @@ func (c *Connection) DropTable(name string) error {
 }
 
 func (c *Connection) BeginTx() error {
+	wc := writeconcern.New(writeconcern.WMajority())
+	rc := readconcern.Snapshot()
+	txnOpts := options.Transaction().SetWriteConcern(wc).SetReadConcern(rc)
+
 	if c.sess != nil {
 		return fmt.Errorf("session already exist. Pls commit or rollback last")
 	}
@@ -136,7 +142,7 @@ func (c *Connection) BeginTx() error {
 	if err != nil {
 		return fmt.Errorf("unable to start new transaction. %s", err.Error())
 	}
-	sess.StartTransaction()
+	sess.StartTransaction(txnOpts)
 	c.sess = sess
 	return nil
 }
@@ -155,14 +161,14 @@ func (c *Connection) Commit() error {
 	return nil
 }
 
-func (c *Connection) Rollback() error {
+func (c *Connection) RollBack() error {
 	if c.sess == nil {
 		return fmt.Errorf("transaction session is not exists yet")
 	}
 
 	err := c.sess.AbortTransaction(c.ctx)
 	if err != nil {
-		return fmt.Errorf("unable to commit. %s", err.Error())
+		return fmt.Errorf("unable to rollback. %s", err.Error())
 	}
 
 	c.sess = nil
