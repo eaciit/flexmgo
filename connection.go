@@ -178,3 +178,7 @@ func (c *Connection) RollBack() error {
 func (c *Connection) IsTx() bool {
 	return c.sess != nil
 }
+
+func (c *Connection) SupportTx() bool {
+	return true
+}

@@ -439,7 +439,7 @@ func connect() (dbflex.IConnection, error) {
 }
 
 func connectTrx() (dbflex.IConnection, error) {
-	if conn, err := dbflex.NewConnectionFromURI("mongodb://localhost:27201,localhost:27202/rsdb?replicaSet=rs01", nil); err == nil {
+	if conn, err := dbflex.NewConnectionFromURI("mongodb://localhost:27017/rsdb", nil); err == nil {
 		if err = conn.Connect(); err == nil {
 			conn.SetFieldNameTag("json")
 			return conn, nil
