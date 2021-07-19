@@ -192,18 +192,17 @@ var (
 )
 
 func TestMdbTrx(t *testing.T) {
-	t.Skip()
 	cv.Convey("connect", t, func() {
-		conn, err := connect()
+		conn, err := connectTrx()
 		cv.So(err, cv.ShouldBeNil)
 		defer conn.Close()
 
 		cv.Convey("insert countries without trx", func() {
 			countries := []*country{
-				&country{"SG", "Singapore"},
-				&country{"ID", "Indonesia"},
-				&country{"MY", "Malaysia"},
-				&country{"IN", "India"},
+				{"SG", "Singapore"},
+				{"ID", "Indonesia"},
+				{"MY", "Malaysia"},
+				{"IN", "India"},
 			}
 
 			err = nil
@@ -226,13 +225,15 @@ func TestMdbTrx(t *testing.T) {
 			cv.So(len(ms), cv.ShouldEqual, len(countries))
 
 			cv.Convey("insert state with trx", func() {
+				conn.Execute(dbflex.From(stateTableName).Delete(), nil)
+
 				err = conn.BeginTx()
 				cv.So(err, cv.ShouldBeNil)
 
 				states := []*state{
-					&state{"SG", "Singapore", "SG"},
-					&state{"JK", "Jakarta", "ID"},
-					&state{"MB", "Mumbai", "IN"},
+					{"SG", "Singapore", "SG"},
+					{"JK", "Jakarta", "ID"},
+					{"MB", "Mumbai", "IN"},
 				}
 				cmd := dbflex.From(stateTableName).Save()
 				for _, state := range states {
@@ -243,26 +244,33 @@ func TestMdbTrx(t *testing.T) {
 				}
 				cv.So(err, cv.ShouldBeNil)
 
+				commitErr := conn.Commit()
+				cv.So(commitErr, cv.ShouldBeNil)
+
 				cmd = dbflex.From(stateTableName).Select()
 				cur := conn.Cursor(cmd, nil)
 				cv.So(cur.Error(), cv.ShouldBeNil)
-				defer cur.Close()
+				cur.Close()
 				ms := []toolkit.M{}
 				cv.So(cur.Fetchs(&ms, 0).Error(), cv.ShouldBeNil)
 				cv.So(len(ms), cv.ShouldEqual, len(states))
 
 				cv.Convey("rollback", func() {
+					err = conn.BeginTx()
+					cv.So(err, cv.ShouldBeNil)
+
+					cmd := dbflex.From(stateTableName).Insert()
+					conn.Execute(cmd, toolkit.M{}.Set("data", &state{"JT", "Jawa Timur", "ID"}))
 					err = conn.RollBack()
-					//cv.Println("Tx status", conn.IsTx())
 					cv.So(err, cv.ShouldBeNil)
 
 					cmd = dbflex.From(stateTableName).Select()
 					cur := conn.Cursor(cmd, nil)
 					cv.So(cur.Error(), cv.ShouldBeNil)
-					defer cur.Close()
+					cur.Close()
 					ms1 := []toolkit.M{}
 					cv.So(cur.Fetchs(&ms1, 0).Error(), cv.ShouldBeNil)
-					cv.So(len(ms1), cv.ShouldEqual, 0)
+					cv.So(len(ms1), cv.ShouldEqual, len(states))
 				})
 			})
 		})
@@ -419,6 +427,19 @@ TO DO
 
 func connect() (dbflex.IConnection, error) {
 	if conn, err := dbflex.NewConnectionFromURI(connTxt, nil); err == nil {
+		if err = conn.Connect(); err == nil {
+			conn.SetFieldNameTag("json")
+			return conn, nil
+		} else {
+			return nil, err
+		}
+	} else {
+		return nil, err
+	}
+}
+
+func connectTrx() (dbflex.IConnection, error) {
+	if conn, err := dbflex.NewConnectionFromURI("mongodb://localhost:27201,localhost:27202/rsdb?replicaSet=rs01", nil); err == nil {
 		if err = conn.Connect(); err == nil {
 			conn.SetFieldNameTag("json")
 			return conn, nil

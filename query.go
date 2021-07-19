@@ -1,7 +1,6 @@
 package flexmgo
 
 import (
-	"context"
 	"fmt"
 	"io"
 	"strings"
@@ -150,7 +149,7 @@ func (q *Query) Cursor(m M) df.ICursor {
 		}
 		pipes = append(pipes, M{}.Set("$group", aggrExpression))
 		var cur *mongo.Cursor
-		err := wrapTx(conn, func(ctx context.Context) error {
+		err := wrapTx(conn, func(ctx mongo.SessionContext) error {
 			var err error
 			cur, err = coll.Aggregate(ctx, pipes, new(options.AggregateOptions).SetAllowDiskUse(true))
 			return err
@@ -174,7 +173,7 @@ func (q *Query) Cursor(m M) df.ICursor {
 		switch cmdValue.(type) {
 		case toolkit.M, bson.M:
 			var curCommand *mongo.Cursor
-			err := wrapTx(conn, func(ctx context.Context) error {
+			err := wrapTx(conn, func(ctx mongo.SessionContext) error {
 				var err error
 				curCommand, err = conn.db.RunCommandCursor(ctx, cmdValue)
 				return err
@@ -290,7 +289,7 @@ func (q *Query) Cursor(m M) df.ICursor {
 			err error
 		)
 
-		err = wrapTx(conn, func(ctx context.Context) error {
+		err = wrapTx(conn, func(ctx mongo.SessionContext) error {
 			var err error
 			//fmt.Println(toolkit.JsonString(opt.Sort))
 			qry, err = coll.Find(ctx, where, opt)
@@ -326,8 +325,13 @@ func (q *Query) Execute(m M) (interface{}, error) {
 	ct := q.Config(df.ConfigKeyCommandType, "N/A")
 	switch ct {
 	case df.QueryInsert:
+		var res *mongo.InsertOneResult
 		dataM, _ := toolkit.ToMTag(data, conn.FieldNameTag())
-		res, err := coll.InsertOne(conn.ctx, dataM)
+		err := wrapTx(conn, func(ctx mongo.SessionContext) error {
+			var err error
+			res, err = coll.InsertOne(ctx, dataM)
+			return err
+		})
 		if err != nil {
 			return nil, err
 		}
@@ -366,14 +370,14 @@ func (q *Query) Execute(m M) (interface{}, error) {
 				}
 				//updatedData := toolkit.M{}.Set("$set", dataS)
 
-				err = wrapTx(conn, func(ctx context.Context) error {
+				err = wrapTx(conn, func(ctx mongo.SessionContext) error {
 					_, err := coll.UpdateMany(ctx, where,
 						toolkit.M{}.Set("$set", dataS),
 						new(options.UpdateOptions).SetUpsert(false))
 					return err
 				})
 			} else {
-				err = wrapTx(conn, func(ctx context.Context) error {
+				err = wrapTx(conn, func(ctx mongo.SessionContext) error {
 					_, err := coll.UpdateOne(ctx, where,
 						toolkit.M{}.Set("$set", data),
 						new(options.UpdateOptions).SetUpsert(false))
@@ -387,7 +391,7 @@ func (q *Query) Execute(m M) (interface{}, error) {
 
 	case df.QueryDelete:
 		if hasWhere {
-			err := wrapTx(conn, func(ctx context.Context) error {
+			err := wrapTx(conn, func(ctx mongo.SessionContext) error {
 				_, err := coll.DeleteMany(ctx, where)
 				return err
 			})
@@ -408,7 +412,7 @@ func (q *Query) Execute(m M) (interface{}, error) {
 			return nil, toolkit.Error("_id field is required")
 		}
 
-		err = wrapTx(conn, func(ctx context.Context) error {
+		err = wrapTx(conn, func(ctx mongo.SessionContext) error {
 			_, err := coll.ReplaceOne(ctx, whereSave, datam,
 				new(options.ReplaceOptions).SetUpsert(true))
 			return err
@@ -555,7 +559,7 @@ func (q *Query) Execute(m M) (interface{}, error) {
 	return nil, nil
 }
 
-func wrapTx(conn *Connection, fn func(ctx context.Context) error) error {
+func wrapTx(conn *Connection, fn func(ctx mongo.SessionContext) error) error {
 	var err error
 	//fmt.Println("Connection in tx", conn.IsTx(), " sess", conn.sess)
 	if conn.sess != nil {
@@ -563,7 +567,7 @@ func wrapTx(conn *Connection, fn func(ctx context.Context) error) error {
 			return fn(sc)
 		})
 	} else {
-		err = fn(conn.ctx)
+		err = fn(nil)
 	}
 	return err
 }
