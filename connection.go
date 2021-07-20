@@ -179,6 +179,7 @@ func (c *Connection) IsTx() bool {
 	return c.sess != nil
 }
 
+// SupportTx to identify if underlying connection support Tx or not
 func (c *Connection) SupportTx() bool {
 	return true
 }
