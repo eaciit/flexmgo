@@ -3,17 +3,16 @@ package flexmgo_test
 import (
 	"bufio"
 	"bytes"
-	"errors"
 	"fmt"
 	"math"
 	"strings"
 	"testing"
 	"time"
 
-	"git.eaciitapp.com/sebar/dbflex/orm"
-	_ "github.com/eaciit/flexmgo"
+	"git.kanosolution.net/kano/dbflex/orm"
+	_ "github.com/ariefdarmawan/flexmgo"
 
-	"git.eaciitapp.com/sebar/dbflex"
+	"git.kanosolution.net/kano/dbflex"
 	"github.com/eaciit/toolkit"
 	cv "github.com/smartystreets/goconvey/convey"
 )
@@ -134,11 +133,11 @@ func TestListData(t *testing.T) {
 			cv.So(err, cv.ShouldBeNil)
 			defer conn.Close()
 
-			cv.Convey("fetchs", func() {
+			cv.Convey("fetch ", func() {
 				cur := conn.Cursor(dbflex.From(tablename).Select().Where(sc.filter), nil)
 				defer cur.Close()
 				rs := []*Record{}
-				err := cur.Fetchs(&rs, 0)
+				err := cur.Fetchs(&rs, 0).Error()
 				cv.So(err, cv.ShouldBeNil)
 				cv.So(len(rs), cv.ShouldBeGreaterThan, 0)
 				cv.So(sc.validator(rs[0]), cv.ShouldBeTrue)
@@ -157,18 +156,121 @@ func TestUpdateData(t *testing.T) {
 			r := new(Record)
 			cmdget := dbflex.From(tablename).Select().Where(dbflex.Eq("_id", "record-id-3"))
 			cur := conn.Cursor(cmdget, nil)
-			err := cur.Fetch(r)
+			err := cur.Fetch(r).Error()
 			cv.So(err, cv.ShouldBeNil)
 			cv.So(r.Title, cv.ShouldStartWith, "Title is ")
 
 			cv.Convey("update data", func() {
-				_, err = conn.Execute(dbflex.From(tablename).Save(), toolkit.M{}.Set("data", r))
+				cmd := dbflex.From(tablename).Update("title")
+				_, err = conn.Execute(cmd, toolkit.M{}.Set("data", r))
 				cv.So(err, cv.ShouldBeNil)
 
 				cv.Convey("vaidate", func() {
 					cur = conn.Cursor(cmdget, nil)
 					count := cur.Count()
 					cv.So(count, cv.ShouldEqual, 1)
+				})
+			})
+		})
+	})
+}
+
+type country struct {
+	ID    string `bson:"_id" json:"_id" ecname:"_id"`
+	Title string
+}
+
+type state struct {
+	ID        string `bson:"_id" json:"_id" ecname:"_id"`
+	Title     string
+	CountryID string
+}
+
+var (
+	countriesTableName = "countries"
+	stateTableName     = "states"
+)
+
+func TestMdbTrx(t *testing.T) {
+	cv.Convey("connect", t, func() {
+		conn, err := connectTrx()
+		cv.So(err, cv.ShouldBeNil)
+		defer conn.Close()
+
+		cv.Convey("insert countries without trx", func() {
+			countries := []*country{
+				{"SG", "Singapore"},
+				{"ID", "Indonesia"},
+				{"MY", "Malaysia"},
+				{"IN", "India"},
+			}
+
+			err = nil
+			cmd := dbflex.From(countriesTableName).Save()
+			for _, country := range countries {
+				_, err = conn.Execute(cmd, toolkit.M{}.Set("data", country))
+				if err != nil {
+					break
+				}
+			}
+			cv.So(err, cv.ShouldBeNil)
+
+			cmd = dbflex.From(countriesTableName).Select()
+			cur := conn.Cursor(cmd, nil)
+			cv.So(cur.Error(), cv.ShouldBeNil)
+			defer cur.Close()
+
+			ms := []toolkit.M{}
+			cv.So(cur.Fetchs(&ms, 0).Error(), cv.ShouldBeNil)
+			cv.So(len(ms), cv.ShouldEqual, len(countries))
+
+			cv.Convey("insert state with trx", func() {
+				conn.Execute(dbflex.From(stateTableName).Delete(), nil)
+
+				err = conn.BeginTx()
+				cv.So(err, cv.ShouldBeNil)
+
+				states := []*state{
+					{"SG", "Singapore", "SG"},
+					{"JK", "Jakarta", "ID"},
+					{"MB", "Mumbai", "IN"},
+				}
+				cmd := dbflex.From(stateTableName).Save()
+				for _, state := range states {
+					_, err = conn.Execute(cmd, toolkit.M{}.Set("data", state))
+					if err != nil {
+						break
+					}
+				}
+				cv.So(err, cv.ShouldBeNil)
+
+				commitErr := conn.Commit()
+				cv.So(commitErr, cv.ShouldBeNil)
+
+				cmd = dbflex.From(stateTableName).Select()
+				cur := conn.Cursor(cmd, nil)
+				cv.So(cur.Error(), cv.ShouldBeNil)
+				cur.Close()
+				ms := []toolkit.M{}
+				cv.So(cur.Fetchs(&ms, 0).Error(), cv.ShouldBeNil)
+				cv.So(len(ms), cv.ShouldEqual, len(states))
+
+				cv.Convey("rollback", func() {
+					err = conn.BeginTx()
+					cv.So(err, cv.ShouldBeNil)
+
+					cmd := dbflex.From(stateTableName).Insert()
+					conn.Execute(cmd, toolkit.M{}.Set("data", &state{"JT", "Jawa Timur", "ID"}))
+					err = conn.RollBack()
+					cv.So(err, cv.ShouldBeNil)
+
+					cmd = dbflex.From(stateTableName).Select()
+					cur := conn.Cursor(cmd, nil)
+					cv.So(cur.Error(), cv.ShouldBeNil)
+					cur.Close()
+					ms1 := []toolkit.M{}
+					cv.So(cur.Fetchs(&ms1, 0).Error(), cv.ShouldBeNil)
+					cv.So(len(ms1), cv.ShouldEqual, len(states))
 				})
 			})
 		})
@@ -247,7 +349,7 @@ func TestAggregateData(t *testing.T) {
 				total := float64(0)
 				for {
 					r := new(Record)
-					if err := cur2.Fetch(r); err == nil {
+					if err := cur2.Fetch(r).Error(); err == nil {
 						total += r.Salary
 					} else {
 						break
@@ -326,6 +428,7 @@ TO DO
 func connect() (dbflex.IConnection, error) {
 	if conn, err := dbflex.NewConnectionFromURI(connTxt, nil); err == nil {
 		if err = conn.Connect(); err == nil {
+			conn.SetFieldNameTag("json")
 			return conn, nil
 		} else {
 			return nil, err
@@ -333,12 +436,24 @@ func connect() (dbflex.IConnection, error) {
 	} else {
 		return nil, err
 	}
-	return nil, errors.New("not implemented yet")
+}
+
+func connectTrx() (dbflex.IConnection, error) {
+	if conn, err := dbflex.NewConnectionFromURI("mongodb://localhost:27017/rsdb", nil); err == nil {
+		if err = conn.Connect(); err == nil {
+			conn.SetFieldNameTag("json")
+			return conn, nil
+		} else {
+			return nil, err
+		}
+	} else {
+		return nil, err
+	}
 }
 
 type Record struct {
-	orm.DataModelBase `bson:"-" json:"-" ecname:"-"`
-	ID                string `bson:"_id" json:"_id" ecname:"_id"`
+	orm.DataModelBase `bson:"-" json:"-"`
+	ID                string `bson:"_id" json:"_id"`
 	Title             string
 	Age               int
 	Salary            float64
@@ -356,3 +471,18 @@ func (r *Record) GetID() ([]string, []interface{}) {
 func (r *Record) SetID(obj []interface{}) {
 	r.ID = obj[0].(string)
 }
+
+/*
+var demoConfig = {
+    _id: "rs",
+    members: [
+        { _id: 0,
+          host: 'localhost:27017',
+          priority: 10
+        },
+        { _id: 1,
+          host: 'localhost:27018'
+        }
+    ]
+ };
+*/
