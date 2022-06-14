@@ -125,6 +125,10 @@ func (c *Connection) NewQuery() dbflex.IQuery {
 	return q
 }
 
+func (c *Connection) EnsureTable(name string, keys []string, obj interface{}) error {
+	return nil
+}
+
 func (c *Connection) DropTable(name string) error {
 	return c.db.Collection(name).Drop(c.ctx)
 }
