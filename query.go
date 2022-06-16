@@ -1,14 +1,16 @@
 package flexmgo
 
 import (
+	"errors"
 	"fmt"
 	"io"
 	"strings"
 
 	"git.kanosolution.net/kano/dbflex"
 	df "git.kanosolution.net/kano/dbflex"
-	"github.com/eaciit/toolkit"
-	. "github.com/eaciit/toolkit"
+	"github.com/ariefdarmawan/serde"
+	"github.com/sebarcode/codekit"
+	. "github.com/sebarcode/codekit"
 
 	"bufio"
 
@@ -144,7 +146,7 @@ func (q *Query) Cursor(m M) df.ICursor {
 		}
 
 		if hasWhere {
-			//fmt.Println("filters:", toolkit.JsonString(where))
+			//fmt.Println("filters:", codekit.JsonString(where))
 			pipes = append(pipes, M{}.Set("$match", where))
 		}
 		pipes = append(pipes, M{}.Set("$group", aggrExpression))
@@ -160,10 +162,10 @@ func (q *Query) Cursor(m M) df.ICursor {
 			cursor.cursor = cur
 			cursor.conn = conn
 			if len(where) == 0 {
-				cursor.countParm = toolkit.M{}.
+				cursor.countParm = codekit.M{}.
 					Set("count", tablename)
 			} else {
-				cursor.countParm = toolkit.M{}.
+				cursor.countParm = codekit.M{}.
 					Set("count", tablename).
 					Set("query", where)
 			}
@@ -171,7 +173,7 @@ func (q *Query) Cursor(m M) df.ICursor {
 	} else if hasCommand {
 		cmdValue := commandParts.Value
 		switch cmdValue.(type) {
-		case toolkit.M, bson.M:
+		case codekit.M, bson.M:
 			var curCommand *mongo.Cursor
 			err := wrapTx(conn, func(ctx mongo.SessionContext) error {
 				var err error
@@ -188,19 +190,19 @@ func (q *Query) Cursor(m M) df.ICursor {
 		case string:
 			switch cmdValue.(string) {
 			case "aggregate", "pipe":
-				pipes := []toolkit.M{}
+				pipes := []codekit.M{}
 				if hasWhere && len(where) > 0 {
 					pipes = append(pipes, M{}.Set("$match", where))
 				}
 				if hasPipe, pipeM := q.Command().HasAttr("pipe"); hasPipe {
 					var (
-						pipeMs []toolkit.M
+						pipeMs []codekit.M
 						//ok     bool
 						cur *mongo.Cursor
 						err error
 					)
 
-					toolkit.Serde(pipeM, &pipeMs, "")
+					serde.Serde(pipeM, &pipeMs)
 					if len(pipeMs) > 0 {
 						if _, has := pipeMs[0]["$text"]; has {
 							pipes = pipeMs
@@ -209,7 +211,7 @@ func (q *Query) Cursor(m M) df.ICursor {
 						}
 					}
 
-					//fmt.Println("pipe:", toolkit.JsonString(pipes), "\n")
+					//fmt.Println("pipe:", codekit.JsonString(pipes), "\n")
 					if cur, err = coll.Aggregate(conn.ctx, pipes, new(options.AggregateOptions).SetAllowDiskUse(true)); err != nil {
 						cursor.SetError(err)
 						return cursor
@@ -223,7 +225,7 @@ func (q *Query) Cursor(m M) df.ICursor {
 			}
 
 		default:
-			cursor.SetError(toolkit.Errorf("invalid command %v", cmdValue))
+			cursor.SetError(fmt.Errorf("invalid command %v", cmdValue))
 			return cursor
 		}
 		/*
@@ -235,7 +237,7 @@ func (q *Query) Cursor(m M) df.ICursor {
 				case "pipe":
 					pipe, ok := m["pipe"]
 					if !ok {
-						cursor.SetError(toolkit.Errorf("invalid command, calling pipe without pipe data"))
+						cursor.SetError(fmt.Errorf("invalid command, calling pipe without pipe data"))
 						return cursor
 					}
 
@@ -248,7 +250,7 @@ func (q *Query) Cursor(m M) df.ICursor {
 		if items, ok := parts[df.QuerySelect]; ok {
 			if fields, ok := items.Value.([]string); ok {
 				if len(fields) > 0 {
-					projection := toolkit.M{}
+					projection := codekit.M{}
 					for _, field := range fields {
 						projection.Set(field, 1)
 					}
@@ -259,7 +261,7 @@ func (q *Query) Cursor(m M) df.ICursor {
 
 		if items, ok := parts[df.QueryOrder]; ok {
 			sortKeys := items.Value.([]string)
-			sortM := toolkit.M{}
+			sortM := codekit.M{}
 			for _, key := range sortKeys {
 				if key[0] == '-' {
 					sortM.Set(key[1:], -1)
@@ -291,7 +293,7 @@ func (q *Query) Cursor(m M) df.ICursor {
 
 		err = wrapTx(conn, func(ctx mongo.SessionContext) error {
 			var err error
-			//fmt.Println(toolkit.JsonString(opt.Sort))
+			//fmt.Println(codekit.JsonString(opt.Sort))
 			qry, err = coll.Find(ctx, where, opt)
 			return err
 		})
@@ -303,9 +305,9 @@ func (q *Query) Cursor(m M) df.ICursor {
 
 		cursor.cursor = qry
 		if len(where) == 0 {
-			cursor.countParm = toolkit.M{}.Set("count", tablename)
+			cursor.countParm = codekit.M{}.Set("count", tablename)
 		} else {
-			cursor.countParm = toolkit.M{}.Set("count", tablename).Set("query", where)
+			cursor.countParm = codekit.M{}.Set("count", tablename).Set("query", where)
 		}
 		cursor.conn = conn
 	}
@@ -326,7 +328,7 @@ func (q *Query) Execute(m M) (interface{}, error) {
 	switch ct {
 	case df.QueryInsert:
 		var res *mongo.InsertOneResult
-		dataM, _ := toolkit.ToMTag(data, conn.FieldNameTag())
+		dataM, _ := codekit.ToMTag(data, conn.FieldNameTag())
 		err := wrapTx(conn, func(ctx mongo.SessionContext) error {
 			var err error
 			res, err = coll.InsertOne(ctx, dataM)
@@ -348,8 +350,8 @@ func (q *Query) Execute(m M) (interface{}, error) {
 				updateqi, _ := parts[df.QueryUpdate]
 				updatevals := updateqi.Value.([]string)
 
-				var dataM toolkit.M
-				dataM, err = toolkit.ToMTag(data, conn.FieldNameTag())
+				var dataM codekit.M
+				dataM, err = codekit.ToMTag(data, conn.FieldNameTag())
 				dataS := M{}
 				if err != nil {
 					return nil, err
@@ -368,25 +370,25 @@ func (q *Query) Execute(m M) (interface{}, error) {
 						dataS[k] = v
 					}
 				}
-				//updatedData := toolkit.M{}.Set("$set", dataS)
+				//updatedData := codekit.M{}.Set("$set", dataS)
 
 				err = wrapTx(conn, func(ctx mongo.SessionContext) error {
 					_, err := coll.UpdateMany(ctx, where,
-						toolkit.M{}.Set("$set", dataS),
+						codekit.M{}.Set("$set", dataS),
 						new(options.UpdateOptions).SetUpsert(false))
 					return err
 				})
 			} else {
 				err = wrapTx(conn, func(ctx mongo.SessionContext) error {
 					_, err := coll.UpdateOne(ctx, where,
-						toolkit.M{}.Set("$set", data),
+						codekit.M{}.Set("$set", data),
 						new(options.UpdateOptions).SetUpsert(false))
 					return err
 				})
 			}
 			return nil, err
 		} else {
-			return nil, toolkit.Errorf("update need to have where clause")
+			return nil, fmt.Errorf("update need to have where clause")
 		}
 
 	case df.QueryDelete:
@@ -397,19 +399,19 @@ func (q *Query) Execute(m M) (interface{}, error) {
 			})
 			return nil, err
 		} else {
-			return nil, toolkit.Errorf("delete need to have where clause. For delete all data in a collection, please use DropTable instead of Delete")
+			return nil, fmt.Errorf("delete need to have where clause. For delete all data in a collection, please use DropTable instead of Delete")
 		}
 
 	case df.QuerySave:
 		whereSave := M{}
-		datam, err := toolkit.ToMTag(data, conn.FieldNameTag())
+		datam, err := codekit.ToMTag(data, conn.FieldNameTag())
 		if err != nil {
-			return nil, toolkit.Errorf("unable to deserialize data: %s", err.Error())
+			return nil, fmt.Errorf("unable to deserialize data: %s", err.Error())
 		}
 		if datam.Has("_id") {
 			whereSave = M{}.Set("_id", datam.Get("_id"))
 		} else {
-			return nil, toolkit.Error("_id field is required")
+			return nil, errors.New("_id field is required")
 		}
 
 		err = wrapTx(conn, func(ctx mongo.SessionContext) error {
@@ -422,17 +424,17 @@ func (q *Query) Execute(m M) (interface{}, error) {
 	case df.QueryCommand:
 		commands, ok := parts[df.QueryCommand]
 		if !ok {
-			return nil, toolkit.Errorf("No command")
+			return nil, fmt.Errorf("No command")
 		}
 
-		//mCommand := commands.Value.(toolkit.M)
+		//mCommand := commands.Value.(codekit.M)
 		//cmd, _ :=
 		cmdValue := commands.Value
 		switch cmdValue.(type) {
 		case string:
 			commandTxt := cmdValue.(string)
 			if commandTxt == "" {
-				return nil, toolkit.Errorf("No command")
+				return nil, fmt.Errorf("No command")
 			}
 
 			var (
@@ -447,12 +449,12 @@ func (q *Query) Execute(m M) (interface{}, error) {
 				bucketOpt.SetName(tablename)
 				bucket, err = gridfs.NewBucket(conn.db, bucketOpt)
 				if err != nil {
-					return nil, toolkit.Errorf("error prepare GridFS bucket. %s", err.Error())
+					return nil, fmt.Errorf("error prepare GridFS bucket. %s", err.Error())
 				}
 			}
 
 			if hasParm, parm := q.Command().HasAttr("CommandParm"); hasParm {
-				m = parm.(toolkit.M)
+				m = parm.(codekit.M)
 			}
 			switch strings.ToLower(commandTxt) {
 			case "gfswrite":
@@ -462,7 +464,7 @@ func (q *Query) Execute(m M) (interface{}, error) {
 				gfsFileName := m.GetString("name")
 				reader = m.Get("source", nil).(io.Reader)
 				if reader == nil {
-					return nil, toolkit.Errorf("invalid reader")
+					return nil, fmt.Errorf("invalid reader")
 				}
 
 				//-- check if file exist, delete if already exist
@@ -471,7 +473,7 @@ func (q *Query) Execute(m M) (interface{}, error) {
 				}
 
 				if !hasMetadata {
-					gfsMetadata = toolkit.M{}
+					gfsMetadata = codekit.M{}
 				}
 				uploadOpt := new(options.UploadOptions)
 				uploadOpt.SetMetadata(gfsMetadata)
@@ -479,7 +481,7 @@ func (q *Query) Execute(m M) (interface{}, error) {
 					gfsFileName = gfsId.(string)
 				}
 				if gfsFileName == "" {
-					gfsFileName = toolkit.RandomString(32)
+					gfsFileName = codekit.RandomString(32)
 				}
 
 				var objId primitive.ObjectID
@@ -489,7 +491,7 @@ func (q *Query) Execute(m M) (interface{}, error) {
 					objId, err = bucket.UploadFromStream(gfsFileName, reader, uploadOpt)
 				}
 				if err != nil {
-					return nil, toolkit.Errorf("error upload file to GridFS. %s", err.Error())
+					return nil, fmt.Errorf("error upload file to GridFS. %s", err.Error())
 				}
 				return objId, nil
 
@@ -511,7 +513,7 @@ func (q *Query) Execute(m M) (interface{}, error) {
 				defer ds.Close()
 
 				if err != nil {
-					return nil, toolkit.Errorf("unable to open GFS %s-%s. %s", tablename, gfsFileName, err.Error())
+					return nil, fmt.Errorf("unable to open GFS %s-%s. %s", tablename, gfsFileName, err.Error())
 				}
 				defer ds.Close()
 
@@ -539,20 +541,20 @@ func (q *Query) Execute(m M) (interface{}, error) {
 				return vs, nil
 
 			default:
-				return nil, toolkit.Errorf("Invalid command: %v", commandTxt)
+				return nil, fmt.Errorf("Invalid command: %v", commandTxt)
 			}
 
-		case toolkit.M:
-			cmdM := cmdValue.(toolkit.M)
+		case codekit.M:
+			cmdM := cmdValue.(codekit.M)
 			sr := conn.db.RunCommand(conn.ctx, cmdM)
 			if sr.Err() != nil {
-				return nil, toolkit.Errorf("unablet to run command. %s. Command: %s",
-					sr.Err().Error(), toolkit.JsonString(cmdM))
+				return nil, fmt.Errorf("unablet to run command. %s. Command: %s",
+					sr.Err().Error(), codekit.JsonString(cmdM))
 			}
 			return sr, nil
 
 		default:
-			return nil, toolkit.Errorf("Unknown command %v", cmdValue)
+			return nil, fmt.Errorf("Unknown command %v", cmdValue)
 		}
 
 	}
@@ -589,11 +591,11 @@ func (q *Query) BuildCommand() (interface{}, error) {
 	panic("not implemented")
 }
 
-func (q *Query) Cursor(toolkit.M) dbflex.ICursor {
+func (q *Query) Cursor(codekit.M) dbflex.ICursor {
 	panic("not implemented")
 }
 
-func (q *Query) Execute(toolkit.M) (interface{}, error) {
+func (q *Query) Execute(codekit.M) (interface{}, error) {
 	panic("not implemented")
 }
 
@@ -601,7 +603,7 @@ func (q *Query) SetConfig(string, interface{}) {
 	panic("not implemented")
 }
 
-func (q *Query) SetConfigM(toolkit.M) {
+func (q *Query) SetConfigM(codekit.M) {
 	panic("not implemented")
 }
 

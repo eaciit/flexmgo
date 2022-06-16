@@ -7,7 +7,8 @@ import (
 	"time"
 
 	"git.kanosolution.net/kano/dbflex"
-	"github.com/eaciit/toolkit"
+	"github.com/ariefdarmawan/serde"
+	"github.com/sebarcode/codekit"
 	"go.mongodb.org/mongo-driver/mongo"
 )
 
@@ -16,7 +17,7 @@ type Cursor struct {
 	mc *mongo.Cursor
 
 	tablename string
-	countParm toolkit.M
+	countParm codekit.M
 	conn      *Connection
 	cursor    *mongo.Cursor
 }
@@ -41,7 +42,7 @@ func (cr *Cursor) Count() int {
 	tableName := cr.countParm.GetString("count")
 	where := cr.countParm.Get("query", nil)
 	if where == nil {
-		n, _ := cr.conn.db.Collection(tableName).CountDocuments(cr.conn.ctx, toolkit.M{})
+		n, _ := cr.conn.db.Collection(tableName).CountDocuments(cr.conn.ctx, codekit.M{})
 		return int(n)
 	} else {
 		n, _ := cr.conn.db.Collection(tableName).CountDocuments(cr.conn.ctx, where)
@@ -53,7 +54,7 @@ func (cr *Cursor) Count() int {
 		if sr.Err() != nil {
 			dbflex.Logger().Errorf("unable to get count. %s, countparm: %s",
 				sr.Err().Error(),
-				toolkit.JsonString(cr.countParm))
+				codekit.JsonString(cr.countParm))
 			return 0
 		}
 
@@ -68,7 +69,7 @@ func (cr *Cursor) Count() int {
 
 func (cr *Cursor) Fetch(out interface{}) dbflex.ICursor {
 	if cr.Error() != nil {
-		cr.SetError(toolkit.Errorf("unable to fetch data. %s", cr.Error()))
+		cr.SetError(fmt.Errorf("unable to fetch data. %s", cr.Error()))
 		return cr
 	}
 
@@ -77,9 +78,9 @@ func (cr *Cursor) Fetch(out interface{}) dbflex.ICursor {
 		return cr
 	}
 
-	m := toolkit.M{}
+	m := codekit.M{}
 	if err := cr.cursor.Decode(&m); err != nil {
-		cr.SetError(toolkit.Errorf("unable to decode output. %s", err.Error()))
+		cr.SetError(fmt.Errorf("unable to decode output. %s", err.Error()))
 		return cr
 	}
 	for mk, mv := range m {
@@ -95,8 +96,8 @@ func (cr *Cursor) Fetch(out interface{}) dbflex.ICursor {
 	if reflect.ValueOf(m).Type().String() == reflect.Indirect(reflect.ValueOf(out)).Type().String() {
 		reflect.ValueOf(out).Elem().Set(reflect.ValueOf(m))
 	} else {
-		if err := toolkit.Serde(m, out, ""); err != nil {
-			cr.SetError(toolkit.Errorf("unable to decode output. %s", err.Error()))
+		if err := serde.Serde(m, out); err != nil {
+			cr.SetError(fmt.Errorf("unable to decode output. %s", err.Error()))
 			return cr
 		}
 	}
@@ -106,7 +107,7 @@ func (cr *Cursor) Fetch(out interface{}) dbflex.ICursor {
 
 func (cr *Cursor) Fetchs(result interface{}, n int) dbflex.ICursor {
 	if cr.Error() != nil {
-		cr.SetError(toolkit.Errorf("unable to fetch data. %s", cr.Error()))
+		cr.SetError(fmt.Errorf("unable to fetch data. %s", cr.Error()))
 		return cr
 	}
 
@@ -136,13 +137,13 @@ func (cr *Cursor) Fetchs(result interface{}, n int) dbflex.ICursor {
 			reflect.ValueOf(result).Elem().Set(ivs)
 	*/
 	read := 0
-	ms := []toolkit.M{}
+	ms := []codekit.M{}
 	for {
 		if !cr.cursor.Next(cr.conn.ctx) {
 			break
 		}
 
-		m := toolkit.M{}
+		m := codekit.M{}
 		err := cr.cursor.Decode(&m)
 		if err != nil {
 			cr.SetError(fmt.Errorf("unable to decode cursor data. %s", err.Error()))
@@ -169,7 +170,7 @@ func (cr *Cursor) Fetchs(result interface{}, n int) dbflex.ICursor {
 	if reflect.ValueOf(ms).Type().String() == reflect.Indirect(reflect.ValueOf(result)).Type().String() {
 		reflect.ValueOf(result).Elem().Set(reflect.ValueOf(ms))
 	} else {
-		if err := toolkit.Serde(ms, result, ""); err != nil {
+		if err := serde.Serde(ms, result); err != nil {
 			cr.SetError(fmt.Errorf("unable to decode cursor data. %s", err.Error()))
 			return cr
 		}

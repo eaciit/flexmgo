@@ -7,7 +7,7 @@ import (
 	"time"
 
 	"git.kanosolution.net/kano/dbflex"
-	"github.com/eaciit/toolkit"
+	"github.com/sebarcode/codekit"
 	"go.mongodb.org/mongo-driver/mongo"
 	"go.mongodb.org/mongo-driver/mongo/options"
 	"go.mongodb.org/mongo-driver/mongo/readconcern"
@@ -49,43 +49,43 @@ func (c *Connection) Connect() error {
 		switch klow {
 		case "serverselectiontimeout":
 			opts.SetServerSelectionTimeout(
-				time.Duration(toolkit.ToInt(v, toolkit.RoundingAuto)) * time.Millisecond)
+				time.Duration(codekit.ToInt(v, codekit.RoundingAuto)) * time.Millisecond)
 
 		case "replicaset":
 			opts.SetReplicaSet(v.(string))
 			//opts.SetWriteConcern()
 
 		case "poolsize":
-			poolSize := toolkit.ToInt(v.(string), toolkit.RoundingAuto)
+			poolSize := codekit.ToInt(v.(string), codekit.RoundingAuto)
 			if poolSize > 0 {
 				opts.SetMaxPoolSize(uint64(poolSize))
 			}
 
 		case "idle":
-			idle := toolkit.ToInt(v.(string), toolkit.RoundingAuto)
+			idle := codekit.ToInt(v.(string), codekit.RoundingAuto)
 			if idle > 0 {
 				opts.SetMaxConnIdleTime(time.Duration(idle) * time.Second)
 			}
 		}
 	}
 
-	//toolkit.Logger().Debugf("opts: %s", toolkit.JsonString(opts))
+	//logger.Logger().Debugf("opts: %s", codekit.JsonString(opts))
 	client, err := mongo.NewClient(opts)
 	if err != nil {
 		return err
 	}
 
-	//toolkit.Logger().Debug("client generated: OK")
+	//logger.Logger().Debug("client generated: OK")
 	if c.ctx == nil {
 		c.ctx = context.TODO()
 	}
 
-	//toolkit.Logger().Debug("context generated: OK")
+	//logger.Logger().Debug("context generated: OK")
 	if err = client.Connect(c.ctx); err != nil {
 		return err
 	}
 
-	//toolkit.Logger().Debug("client connected: OK")
+	//logger.Logger().Debug("client connected: OK")
 	if err = client.Ping(c.ctx, nil); err != nil {
 		return err
 	}
