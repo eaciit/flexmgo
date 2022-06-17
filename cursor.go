@@ -4,10 +4,8 @@ import (
 	"fmt"
 	"io"
 	"reflect"
-	"time"
 
 	"git.kanosolution.net/kano/dbflex"
-	"github.com/ariefdarmawan/serde"
 	"github.com/sebarcode/codekit"
 	"go.mongodb.org/mongo-driver/mongo"
 )
@@ -78,28 +76,9 @@ func (cr *Cursor) Fetch(out interface{}) dbflex.ICursor {
 		return cr
 	}
 
-	m := codekit.M{}
-	if err := cr.cursor.Decode(&m); err != nil {
+	if err := cr.cursor.Decode(out); err != nil {
 		cr.SetError(fmt.Errorf("unable to decode output. %s", err.Error()))
 		return cr
-	}
-	for mk, mv := range m {
-		// update date value to date
-		if mvs, ok := mv.(string); ok && len(mvs) >= 11 {
-			if mvs[4] == '-' && mvs[7] == '-' && mvs[10] == 'T' {
-				if dt, err := time.Parse(time.RFC3339, mvs); err == nil {
-					m.Set(mk, dt)
-				}
-			}
-		}
-	}
-	if reflect.ValueOf(m).Type().String() == reflect.Indirect(reflect.ValueOf(out)).Type().String() {
-		reflect.ValueOf(out).Elem().Set(reflect.ValueOf(m))
-	} else {
-		if err := serde.Serde(m, out); err != nil {
-			cr.SetError(fmt.Errorf("unable to decode output. %s", err.Error()))
-			return cr
-		}
 	}
 
 	return cr
@@ -111,129 +90,64 @@ func (cr *Cursor) Fetchs(result interface{}, n int) dbflex.ICursor {
 		return cr
 	}
 
-	/*
-		v := reflect.TypeOf(result).Elem().Elem()
-		ivs := reflect.MakeSlice(reflect.SliceOf(v), 0, 0)
+	v := reflect.ValueOf(result)
+	if v.Kind() != reflect.Ptr {
+		return cr.SetError(fmt.Errorf("result should be a pointer of slice"))
+	}
+	v = v.Elem()
+	if v.Kind() != reflect.Slice {
+		return cr.SetError(fmt.Errorf("result should be a pointer of slice"))
+	}
 
-			read := 0
-			for {
-				if !cr.cursor.Next(cr.conn.ctx) {
-					break
-				}
+	sliceType := v.Type()
+	elemType := sliceType.Elem()
+	elemIsPtr := elemType.Kind() == reflect.Ptr
 
-				iv := reflect.New(v).Interface()
-				err := cr.cursor.Decode(iv)
-				if err != nil {
-					cr.SetError(fmt.Errorf("unable to decode cursor data. %s", err.Error()))
-					return cr
-				}
-				ivs = reflect.Append(ivs, reflect.ValueOf(iv).Elem())
-
-				read++
-				if n != 0 && read == n {
-					break
-				}
-			}
-			reflect.ValueOf(result).Elem().Set(ivs)
-	*/
+	destBuffer := reflect.MakeSlice(sliceType, 1000, 1000)
 	read := 0
-	ms := []codekit.M{}
+	used := 0
 	for {
 		if !cr.cursor.Next(cr.conn.ctx) {
 			break
 		}
 
-		m := codekit.M{}
-		err := cr.cursor.Decode(&m)
+		destItemValue := createPtrFromType(elemType)
+		destItem := destItemValue.Interface()
+		err := cr.cursor.Decode(destItem)
 		if err != nil {
 			cr.SetError(fmt.Errorf("unable to decode cursor data. %s", err.Error()))
 			return cr
 		}
-		for mk, mv := range m {
-			// update date value to date
-			if mvs, ok := mv.(string); ok && len(mvs) >= 11 {
-				if mvs[4] == '-' && mvs[7] == '-' && mvs[10] == 'T' {
-					if dt, err := time.Parse(time.RFC3339, mvs); err == nil {
-						m.Set(mk, dt)
-						//fmt.Println(mk, mvs, dt, m, fmt.Sprintf("%t", m.Get("Created")))
-					}
-				}
-			}
+
+		if elemIsPtr {
+			destBuffer.Index(read).Set(reflect.ValueOf(destItem))
+		} else {
+			destBuffer.Index(read).Set(reflect.ValueOf(destItem).Elem())
 		}
-		ms = append(ms, m)
 
 		read++
+		used++
+
+		if used == 1000 {
+			used = 0
+			newLen := read + 1000 - 1
+			biggerBuffer := reflect.MakeSlice(sliceType, newLen, newLen)
+			reflect.Copy(biggerBuffer, destBuffer)
+			destBuffer = biggerBuffer
+		}
+
 		if n != 0 && read == n {
 			break
 		}
 	}
-	if reflect.ValueOf(ms).Type().String() == reflect.Indirect(reflect.ValueOf(result)).Type().String() {
-		reflect.ValueOf(result).Elem().Set(reflect.ValueOf(ms))
+
+	if destBuffer.Len() != read {
+		lesseBuffer := reflect.MakeSlice(sliceType, read, read)
+		reflect.Copy(lesseBuffer, destBuffer)
+		v.Set(lesseBuffer)
 	} else {
-		if err := serde.Serde(ms, result); err != nil {
-			cr.SetError(fmt.Errorf("unable to decode cursor data. %s", err.Error()))
-			return cr
-		}
+		v.Set(destBuffer)
 	}
 
 	return cr
 }
-
-/*
-func (cr *Cursor) Reset() error {
-	panic("not implemented")
-}
-
-func (cr *Cursor) Fetch(interface{}) error {
-	panic("not implemented")
-}
-
-func (cr *Cursor) Fetchs(interface{}, int) error {
-	panic("not implemented")
-}
-
-
-func (cr *Cursor) CountAsync() <-chan int {
-	panic("not implemented")
-}
-
-func (cr *Cursor) Error() error {
-	panic("not implemented")
-}
-
-func (cr *Cursor) CloseAfterFetch() bool {
-	panic("not implemented")
-}
-
-func (cr *Cursor) SetCountCommand(dbflex.ICommand) {
-	panic("not implemented")
-}
-
-func (cr *Cursor) CountCommand() dbflex.ICommand {
-	panic("not implemented")
-}
-
-func (cr *Cursor) Connection() dbflex.IConnection {
-	panic("not implemented")
-}
-
-func (cr *Cursor) SetConnection(dbflex.IConnection) {
-	panic("not implemented")
-}
-
-func (cr *Cursor) ConfigRef(key string, def interface{}, out interface{}) {
-	panic("not implemented")
-}
-
-func (cr *Cursor) Set(key string, value interface{}) {
-	panic("not implemented")
-}
-
-func (cr *Cursor) SetCloseAfterFetch() dbflex.ICursor {
-	panic("not implemented")
-}
-
-func (cr *Cursor) AutoClose(time.Duration) dbflex.ICursor {
-	panic("not implemented")
-}
-*/
