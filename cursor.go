@@ -106,11 +106,7 @@ func (cr *Cursor) Fetchs(result interface{}, n int) dbflex.ICursor {
 	destBuffer := reflect.MakeSlice(sliceType, 1000, 1000)
 	read := 0
 	used := 0
-	for {
-		if !cr.cursor.Next(cr.conn.ctx) {
-			break
-		}
-
+	for cr.cursor.Next(cr.conn.ctx) {
 		destItemValue := createPtrFromType(elemType)
 		destItem := destItemValue.Interface()
 		err := cr.cursor.Decode(destItem)

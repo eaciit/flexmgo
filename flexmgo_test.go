@@ -3,6 +3,7 @@ package flexmgo_test
 import (
 	"bufio"
 	"bytes"
+	"context"
 	"fmt"
 	"math"
 	"strings"
@@ -12,14 +13,21 @@ import (
 	"git.kanosolution.net/kano/dbflex/orm"
 	_ "github.com/ariefdarmawan/flexmgo"
 	logger "github.com/sebarcode/logger"
+	"go.mongodb.org/mongo-driver/bson"
+	"go.mongodb.org/mongo-driver/bson/primitive"
+	"go.mongodb.org/mongo-driver/mongo"
+	"go.mongodb.org/mongo-driver/mongo/options"
 
 	"git.kanosolution.net/kano/dbflex"
 	"github.com/sebarcode/codekit"
+	"github.com/smartystreets/goconvey/convey"
 	cv "github.com/smartystreets/goconvey/convey"
 )
 
 const (
 	connTxt = "mongodb://localhost:27017/dbapp"
+	host    = "mongodb://localhost:27017"
+	dbname  = "dbapp"
 )
 
 func init() {
@@ -417,6 +425,50 @@ func TestGridFsUpdate(t *testing.T) {
 					_, err := conn.Execute(cmd, codekit.M{}.Set("id", "doc1"))
 					cv.So(err, cv.ShouldBeNil)
 				})
+			})
+		})
+	})
+}
+
+func TestCheckIndex(t *testing.T) {
+	cv.Convey("connect and create index", t, func() {
+		conn, _ := connect()
+		defer conn.Close()
+
+		e := conn.EnsureIndex(tablename, "record_salary_index", false, "Age", "-Salary")
+		cv.So(e, cv.ShouldBeNil)
+
+		cv.Convey("validate", func() {
+			ctx := context.TODO()
+			mconn, _ := mongo.Connect(ctx, options.Client().ApplyURI(host))
+			defer mconn.Disconnect(ctx)
+
+			indexCursor, e := mconn.Database(dbname).Collection(tablename).Indexes().List(ctx)
+			cv.So(e, cv.ShouldBeNil)
+
+			indexModels := []bson.M{}
+			indexCursor.All(ctx, &indexModels)
+
+			found := false
+			indexOk := false
+			for _, index := range indexModels {
+				//cv.Println(codekit.JsonString(index))
+				name, nameOk := index["name"].(string)
+				if nameOk && name == "record_salary_index" {
+					found = true
+					key := index["key"].(primitive.M)
+					indexOk = key["Age"].(int32) == 1 && key["Salary"].(int32) == -1
+				}
+			}
+
+			cv.So(found, cv.ShouldBeTrue)
+			cv.So(indexOk, cv.ShouldBeTrue)
+
+			convey.Convey("reindex", func() {
+				e := conn.EnsureIndex(tablename, "record_salary_index", false, "Age", "-Salary")
+				cv.So(e, cv.ShouldBeNil)
+
+				mconn.Database(dbname).Collection(tablename).Indexes().DropOne(ctx, "record_salary_index")
 			})
 		})
 	})

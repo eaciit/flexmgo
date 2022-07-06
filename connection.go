@@ -8,6 +8,8 @@ import (
 
 	"git.kanosolution.net/kano/dbflex"
 	"github.com/sebarcode/codekit"
+	"go.mongodb.org/mongo-driver/bson"
+	"go.mongodb.org/mongo-driver/bson/primitive"
 	"go.mongodb.org/mongo-driver/mongo"
 	"go.mongodb.org/mongo-driver/mongo/options"
 	"go.mongodb.org/mongo-driver/mongo/readconcern"
@@ -126,6 +128,82 @@ func (c *Connection) NewQuery() dbflex.IQuery {
 }
 
 func (c *Connection) EnsureTable(name string, keys []string, obj interface{}) error {
+	return nil
+}
+
+func (c *Connection) EnsureIndex(tableName, indexName string, isUnique bool, fields ...string) error {
+	indexFound := false
+	currentIndex := bson.M{}
+	ctx := context.Background()
+	coll := c.db.Collection(tableName)
+	cursorIndex, e := coll.Indexes().List(ctx)
+	if e != nil {
+		return e
+	}
+
+	for cursorIndex.Next(ctx) {
+		if e := cursorIndex.Decode(&currentIndex); e != nil {
+			continue
+		}
+
+		if currentIndex["name"].(string) == indexName {
+			indexFound = true
+			break
+		}
+	}
+
+	createIndex := false
+	if indexFound {
+		keys := currentIndex["key"].(primitive.M)
+		unique, uniqueOK := currentIndex["unique"]
+		if uniqueOK && unique != isUnique {
+			createIndex = true
+		} else {
+		keyChecking:
+			for _, f := range fields {
+				fieldName := f
+				indexValue := 1
+				if f[0] == '-' {
+					fieldName = f[1:]
+					indexValue = -1
+				}
+
+				if existingIndexValue, ok := keys[fieldName]; !ok {
+					createIndex = true
+					break keyChecking
+				} else if existingIndexValue != indexValue {
+					createIndex = true
+					break keyChecking
+				}
+			}
+
+		}
+	} else {
+		createIndex = true
+	}
+
+	if createIndex {
+		if indexFound {
+			coll.Indexes().DropOne(ctx, indexName)
+		}
+
+		indexKeys := bson.D{}
+		for _, f := range fields {
+			if f[0] == '-' {
+				indexKeys = append(indexKeys, bson.E{f[1:], -1})
+			} else {
+				indexKeys = append(indexKeys, bson.E{f, 1})
+			}
+		}
+
+		if _, err := coll.Indexes().CreateOne(ctx, mongo.IndexModel{
+			Keys:    indexKeys,
+			Options: options.Index().SetName(indexName).SetUnique(isUnique),
+		}); err != nil {
+			return err
+		}
+
+	}
 	return nil
 }
 
