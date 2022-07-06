@@ -3,7 +3,7 @@ module github.com/ariefdarmawan/flexmgo
 go 1.16
 
 require (
-	git.kanosolution.net/kano/dbflex v1.2.2-0.20220706113442-c678736ba69e
+	git.kanosolution.net/kano/dbflex v1.2.2
 	github.com/ariefdarmawan/serde v0.1.0
 	github.com/sebarcode/codekit v0.1.0
 	github.com/sebarcode/logger v0.1.1
