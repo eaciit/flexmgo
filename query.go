@@ -87,7 +87,6 @@ func (q *Query) BuildFilter(f *df.Filter) (interface{}, error) {
 				bfs = append(bfs, bf)
 			}
 		}
-
 		fm.Set(string(f.Op), bfs)
 	} else if f.Op == df.OpNot {
 		bf, eb := q.BuildFilter(f.Items[0])
@@ -95,8 +94,27 @@ func (q *Query) BuildFilter(f *df.Filter) (interface{}, error) {
 			field := f.Items[0].Field
 			fm.Set(field, M{}.Set("$not", bf.(M).Get(field)))
 		}
+	} else if f.Op == df.OpAll {
+		values, ok := f.Value.([]interface{})
+		if !ok {
+			return nil, fmt.Errorf("fail to translate %s. %s", f.Op, JsonString(f))
+		}
+		fm.Set(f.Field, M{}.Set("$all", values))
+	} else if f.Op == df.OpElemMatch {
+		matchM := M{}
+		for _, item := range f.Items {
+			bf, eb := q.BuildFilter(item)
+			if eb != nil {
+				return nil, fmt.Errorf("error translate filter %s", JsonString(item))
+			}
+			bfm := bf.(codekit.M)
+			for k, v := range bfm {
+				matchM.Set(k, v)
+			}
+		}
+		fm.Set(f.Field, M{}.Set("$elemMatch", matchM))
 	} else {
-		return nil, fmt.Errorf("Filter Op %s is not defined", f.Op)
+		return nil, fmt.Errorf("filter op %s is not defined", f.Op)
 	}
 	return fm, nil
 }
