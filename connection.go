@@ -263,8 +263,8 @@ func (c *Connection) RollBack() error {
 	return nil
 }
 
-func (c *Connection) DisableTx() {
-	c._disableTx = true
+func (c *Connection) DisableTx(disable bool) {
+	c._disableTx = disable
 }
 
 func (c *Connection) IsTx() bool {
