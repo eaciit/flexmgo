@@ -217,7 +217,7 @@ func (c *Connection) BeginTx() error {
 	if c._disableTx {
 		return errors.New("tx is disabled")
 	}
-	
+
 	wc := writeconcern.New(writeconcern.WMajority())
 	rc := readconcern.Snapshot()
 	txnOpts := options.Transaction().SetWriteConcern(wc).SetReadConcern(rc)
@@ -273,6 +273,8 @@ func (c *Connection) IsTx() bool {
 
 // SupportTx to identify if underlying connection support Tx or not
 func (c *Connection) SupportTx() bool {
-	if (c._disableTx) return false
+	if (c._disableTx) {
+		return false
+	}
 	return true
 }
