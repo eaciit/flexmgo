@@ -22,6 +22,8 @@ type Connection struct {
 	client                *mongo.Client
 	db                    *mongo.Database
 	sess                  mongo.Session
+
+	_disableTx bool
 }
 
 func (c *Connection) Connect() error {
@@ -212,6 +214,10 @@ func (c *Connection) DropTable(name string) error {
 }
 
 func (c *Connection) BeginTx() error {
+	if c._disableTx {
+		return errors.New("tx is disabled")
+	}
+	
 	wc := writeconcern.New(writeconcern.WMajority())
 	rc := readconcern.Snapshot()
 	txnOpts := options.Transaction().SetWriteConcern(wc).SetReadConcern(rc)
@@ -257,11 +263,16 @@ func (c *Connection) RollBack() error {
 	return nil
 }
 
+func (c *Connection) DisableTx() {
+	c._disableTx = true
+}
+
 func (c *Connection) IsTx() bool {
 	return c.sess != nil
 }
 
 // SupportTx to identify if underlying connection support Tx or not
 func (c *Connection) SupportTx() bool {
+	if (c._disableTx) return false
 	return true
 }
