@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"strings"
 	"time"
+	"errors"
 
 	"git.kanosolution.net/kano/dbflex"
 	"github.com/sebarcode/codekit"
