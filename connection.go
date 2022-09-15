@@ -2,10 +2,11 @@ package flexmgo
 
 import (
 	"context"
+	"crypto/tls"
+	"errors"
 	"fmt"
 	"strings"
 	"time"
-	"errors"
 
 	"git.kanosolution.net/kano/dbflex"
 	"github.com/sebarcode/codekit"
@@ -66,6 +67,16 @@ func (c *Connection) Connect() error {
 				opts.SetMaxPoolSize(uint64(poolSize))
 			}
 
+		case "tlsinsecure":
+			opts.SetTLSConfig(&tls.Config{InsecureSkipVerify: true})
+
+		case "tlscertificate":
+			opts.SetTLSConfig(loadCerts(&tls.Config{}, strings.Split(v.(string), ",")...))
+
+		case "writeconcern":
+			wConcern := writeconcern.New(writeconcern.WMajority())
+			opts.SetWriteConcern(wConcern)
+
 		case "idle":
 			idle := codekit.ToInt(v.(string), codekit.RoundingAuto)
 			if idle > 0 {
@@ -101,6 +112,10 @@ func (c *Connection) Connect() error {
 	}
 
 	return nil
+}
+
+func loadCerts(cfg *tls.Config, certFiles ...string) *tls.Config {
+	return cfg
 }
 
 func (c *Connection) Mdb() *mongo.Database {
@@ -274,8 +289,14 @@ func (c *Connection) IsTx() bool {
 
 // SupportTx to identify if underlying connection support Tx or not
 func (c *Connection) SupportTx() bool {
-	if (c._disableTx) {
-		return false
+	return !c._disableTx
+}
+
+func (c *Connection) ObjectNames(kind dbflex.ObjTypeEnum) []string {
+	if !(kind == dbflex.ObjTypeAll || kind == dbflex.ObjTypeTable) {
+		return []string{}
 	}
-	return true
+
+	names, _ := c.db.ListCollectionNames(context.TODO(), bson.D{})
+	return names
 }
