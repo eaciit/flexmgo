@@ -126,7 +126,7 @@ func (cr *Cursor) Fetchs(result interface{}, n int) dbflex.ICursor {
 
 		if used == 1000 {
 			used = 0
-			newLen := read + 1000 - 1
+			newLen := read + 1000
 			biggerBuffer := reflect.MakeSlice(sliceType, newLen, newLen)
 			reflect.Copy(biggerBuffer, destBuffer)
 			destBuffer = biggerBuffer
