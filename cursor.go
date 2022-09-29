@@ -8,6 +8,7 @@ import (
 	"git.kanosolution.net/kano/dbflex"
 	"github.com/sebarcode/codekit"
 	"go.mongodb.org/mongo-driver/mongo"
+	"go.mongodb.org/mongo-driver/mongo/options"
 )
 
 type Cursor struct {
@@ -40,10 +41,10 @@ func (cr *Cursor) Count() int {
 	tableName := cr.countParm.GetString("count")
 	where := cr.countParm.Get("query", nil)
 	if where == nil {
-		n, _ := cr.conn.db.Collection(tableName).CountDocuments(cr.conn.ctx, codekit.M{})
+		n, _ := cr.conn.db.Collection(tableName).EstimatedDocumentCount(cr.conn.ctx) //.CountDocuments(cr.conn.ctx, codekit.M{})
 		return int(n)
 	} else {
-		n, _ := cr.conn.db.Collection(tableName).CountDocuments(cr.conn.ctx, where)
+		n, _ := cr.conn.db.Collection(tableName).CountDocuments(cr.conn.ctx, where, options.Count().SetLimit(10000000))
 		return int(n)
 	}
 

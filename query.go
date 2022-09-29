@@ -35,6 +35,8 @@ func (q *Query) BuildFilter(f *df.Filter) (interface{}, error) {
 		fm.Set(f.Field, f.Value)
 	} else if f.Op == df.OpNe {
 		fm.Set(f.Field, M{}.Set("$ne", f.Value))
+	} else if f.Op == "$text" {
+		fm.Set("$text", M{}.Set("$search", f.Value))
 	} else if f.Op == df.OpContains {
 		fs := f.Value.([]interface{})
 		if len(fs) > 1 {
@@ -417,7 +419,7 @@ func (q *Query) Execute(m M) (interface{}, error) {
 			})
 			return nil, err
 		} else {
-			return nil, fmt.Errorf("delete need to have where clause. For delete all data in a collection, please use DropTable instead of Delete")
+			return nil, fmt.Errorf("delete need to have where clause. To delete all data in a collection, please use DropTable instead of Delete")
 		}
 
 	case df.QuerySave:
