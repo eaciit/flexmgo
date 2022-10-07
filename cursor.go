@@ -15,7 +15,7 @@ type Cursor struct {
 	dbflex.CursorBase
 	mc *mongo.Cursor
 
-	tablename string
+	//tablename string
 	countParm codekit.M
 	conn      *Connection
 	cursor    *mongo.Cursor

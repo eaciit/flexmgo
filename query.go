@@ -14,7 +14,6 @@ import (
 
 	"bufio"
 
-	"go.mongodb.org/mongo-driver/bson"
 	"go.mongodb.org/mongo-driver/bson/primitive"
 	"go.mongodb.org/mongo-driver/mongo"
 	"go.mongodb.org/mongo-driver/mongo/gridfs"
@@ -191,9 +190,44 @@ func (q *Query) Cursor(m M) df.ICursor {
 			}
 		}
 	} else if hasCommand {
+		cmdName := commandParts.Op
 		cmdValue := commandParts.Value
-		switch cmdValue.(type) {
-		case codekit.M, bson.M:
+		switch cmdName {
+		case "aggregate", "aggr", "pipe":
+			pipes := []codekit.M{}
+			if hasWhere && len(where) > 0 {
+				pipes = append(pipes, M{}.Set("$match", where))
+			}
+
+			pipeM := cmdValue
+			var (
+				pipeMs []codekit.M
+				//ok     bool
+				cur *mongo.Cursor
+				err error
+			)
+
+			serde.Serde(pipeM, &pipeMs)
+			if len(pipeMs) > 0 {
+				if _, has := pipeMs[0]["$text"]; has {
+					pipes = pipeMs
+				} else {
+					pipes = append(pipes, pipeMs...)
+				}
+			}
+
+			//fmt.Println("pipe:", codekit.JsonString(pipes), "\n")
+			if cur, err = coll.Aggregate(conn.ctx, pipes, new(options.AggregateOptions).SetAllowDiskUse(true)); err != nil {
+				cursor.SetError(err)
+				return cursor
+			}
+
+			cursor.cursor = cur
+			cursor.conn = conn
+			cursor.countParm = nil
+			return cursor
+
+		case "command":
 			var curCommand *mongo.Cursor
 			err := wrapTx(conn, func(ctx mongo.SessionContext) error {
 				var err error
@@ -206,43 +240,6 @@ func (q *Query) Cursor(m M) df.ICursor {
 				cursor.cursor = curCommand
 			}
 			return cursor
-
-		case string:
-			switch cmdValue.(string) {
-			case "aggregate", "pipe":
-				pipes := []codekit.M{}
-				if hasWhere && len(where) > 0 {
-					pipes = append(pipes, M{}.Set("$match", where))
-				}
-				if hasPipe, pipeM := q.Command().HasAttr("pipe"); hasPipe {
-					var (
-						pipeMs []codekit.M
-						//ok     bool
-						cur *mongo.Cursor
-						err error
-					)
-
-					serde.Serde(pipeM, &pipeMs)
-					if len(pipeMs) > 0 {
-						if _, has := pipeMs[0]["$text"]; has {
-							pipes = pipeMs
-						} else {
-							pipes = append(pipes, pipeMs...)
-						}
-					}
-
-					//fmt.Println("pipe:", codekit.JsonString(pipes), "\n")
-					if cur, err = coll.Aggregate(conn.ctx, pipes, new(options.AggregateOptions).SetAllowDiskUse(true)); err != nil {
-						cursor.SetError(err)
-						return cursor
-					}
-
-					cursor.cursor = cur
-					cursor.conn = conn
-					cursor.countParm = nil
-					return cursor
-				}
-			}
 
 		default:
 			cursor.SetError(fmt.Errorf("invalid command %v", cmdValue))
@@ -263,8 +260,6 @@ func (q *Query) Cursor(m M) df.ICursor {
 
 					cursor.mgoiter = coll.Pipe(pipe).AllowDiskUse().Iter()
 		*/
-		cursor.SetError(fmt.Errorf("pipe and command is not yet applied"))
-		return cursor
 	} else {
 		opt := options.Find()
 		if items, ok := parts[df.QuerySelect]; ok {

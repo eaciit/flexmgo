@@ -401,7 +401,7 @@ func TestGridFsUpdate(t *testing.T) {
 			buff := bytes.NewReader([]byte(data))
 			reader := bufio.NewReader(buff)
 
-			cmd := dbflex.From("fs").Command("GfsWrite")
+			cmd := dbflex.From("fs").Command("GfsWrite", nil)
 			metadata := codekit.M{}.Set("data", "ini adalah meta")
 			_, err := conn.Execute(cmd, codekit.M{}.
 				Set("id", "doc1").
@@ -413,7 +413,7 @@ func TestGridFsUpdate(t *testing.T) {
 				var buff bytes.Buffer
 				writer := bufio.NewWriter(&buff)
 
-				cmd := dbflex.From("fs").Command("gfsread")
+				cmd := dbflex.From("fs").Command("gfsread", nil)
 				_, err := conn.Execute(cmd, codekit.M{}.
 					Set("id", "doc1").
 					Set("output", writer))
@@ -421,7 +421,7 @@ func TestGridFsUpdate(t *testing.T) {
 				cv.So(string(data), cv.ShouldEqual, string(buff.Bytes()))
 
 				cv.Convey("delete grid", func() {
-					cmd := dbflex.From("fs").Command("gfsdelete")
+					cmd := dbflex.From("fs").Command("gfsdelete", nil)
 					_, err := conn.Execute(cmd, codekit.M{}.Set("id", "doc1"))
 					cv.So(err, cv.ShouldBeNil)
 				})
