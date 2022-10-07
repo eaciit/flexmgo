@@ -267,7 +267,16 @@ func (q *Query) Cursor(m M) df.ICursor {
 				if len(fields) > 0 {
 					projection := codekit.M{}
 					for _, field := range fields {
-						projection.Set(field, 1)
+						if strings.Contains(field, ":") {
+							alias := strings.Split(field, ":")
+							if len(alias) <= 1 {
+								cursor.SetError(errors.New("error on translating projection field " + field))
+								return cursor
+							}
+							projection.Set(alias[0], alias[1])
+						} else {
+							projection.Set(field, 1)
+						}
 					}
 					opt.SetProjection(projection)
 				}
