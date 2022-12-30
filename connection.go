@@ -31,6 +31,10 @@ type Connection struct {
 func (c *Connection) Connect() error {
 	configString := "?"
 	for k, v := range c.Config {
+		if strings.ToLower(k) == "authmechanism" && strings.ToLower(v.(string)) == "default" {
+			configString += k + "=SCRAM-SHA-256&"
+			continue
+		}
 		configString += k + "=" + v.(string) + "&"
 	}
 
@@ -42,16 +46,6 @@ func (c *Connection) Connect() error {
 	}
 	connURI += c.Host + "/"
 	connURI += configString
-
-	/*
-		if c.User != "" {
-			opts.SetAuth(options.Credential{
-				Username:   c.User,
-				Password:   c.Password,
-				AuthSource: authSource,
-			})
-		}
-	*/
 
 	opts := options.Client().ApplyURI(connURI)
 	for k, v := range c.Config {
