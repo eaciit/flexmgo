@@ -43,7 +43,7 @@ func TestConnect(t *testing.T) {
 	})
 }
 
-var tablename = "testrecord"
+var tablename = "test_arief"
 
 func TestConnectFail(t *testing.T) {
 	cv.Convey("connect", t, func() {

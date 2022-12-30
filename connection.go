@@ -35,21 +35,25 @@ func (c *Connection) Connect() error {
 	}
 
 	connURI := "mongodb://"
+
+	if c.User != "" {
+		authPrefix := c.User + ":" + c.Password
+		connURI += authPrefix + "@"
+	}
 	connURI += c.Host + "/"
 	connURI += configString
 
-	opts := options.Client().ApplyURI(connURI)
-	//opts.SetConnectTimeout(5 * time.Second)
-	//opts.SetSocketTimeout(3 * time.Second)
-	//opts.SetServerSelectionTimeout(3 * time.Second)
-	if c.User != "" {
-		opts.SetAuth(options.Credential{
-			Username:   c.User,
-			Password:   c.Password,
-			AuthSource: "admin",
-		})
-	}
+	/*
+		if c.User != "" {
+			opts.SetAuth(options.Credential{
+				Username:   c.User,
+				Password:   c.Password,
+				AuthSource: authSource,
+			})
+		}
+	*/
 
+	opts := options.Client().ApplyURI(connURI)
 	for k, v := range c.Config {
 		klow := strings.ToLower(k)
 		switch klow {
