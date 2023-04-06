@@ -238,6 +238,8 @@ func (q *Query) Cursor(m M) df.ICursor {
 				cursor.SetError(err)
 			} else {
 				cursor.cursor = curCommand
+				cursor.conn = conn
+				cursor.countParm = nil
 			}
 			return cursor
 

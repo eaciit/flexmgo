@@ -474,6 +474,29 @@ func TestCheckIndex(t *testing.T) {
 	})
 }
 
+func TestSelectCommand(t *testing.T) {
+	convey.Convey("select command", t, func() {
+		convey.Convey("connect", func() {
+			c, e := connect()
+			convey.So(e, convey.ShouldBeNil)
+			defer c.Close()
+
+			convey.Convey("select", func() {
+				cmd := dbflex.From("mytable").Command("command", codekit.M{"find": "mytable"})
+				cur := c.Cursor(cmd, nil)
+				convey.So(cur.Error(), convey.ShouldBeNil)
+				defer cur.Close()
+
+				res := []codekit.M{}
+				cur.Fetchs(&res, 0)
+				convey.So(cur.Error(), convey.ShouldBeNil)
+				convey.Printf("records returned: %d\n", len(res))
+				convey.Printf("serialized: %s\n", res)
+			})
+		})
+	})
+}
+
 /*
 TO DO
 - Command Cursor
