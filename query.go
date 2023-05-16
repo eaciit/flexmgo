@@ -55,11 +55,11 @@ func (q *Query) BuildFilter(f *df.Filter) (interface{}, error) {
 		}
 	} else if f.Op == df.OpStartWith {
 		fm.Set(f.Field, M{}.
-			Set("$regex", fmt.Sprintf("^%s.*$", f.Value)).
+			Set("$regex", fmt.Sprintf("^%s", f.Value)).
 			Set("$options", "i"))
 	} else if f.Op == df.OpEndWith {
 		fm.Set(f.Field, M{}.
-			Set("$regex", fmt.Sprintf("^.*%s$", f.Value)).
+			Set("$regex", fmt.Sprintf("%s$", f.Value)).
 			Set("$options", "i"))
 	} else if f.Op == df.OpIn {
 		fm.Set(f.Field, M{}.Set("$in", f.Value))
