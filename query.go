@@ -287,12 +287,12 @@ func (q *Query) Cursor(m M) df.ICursor {
 
 		if items, ok := parts[df.QueryOrder]; ok {
 			sortKeys := items.Value.([]string)
-			sortM := codekit.M{}
+			sortM := []codekit.M{}
 			for _, key := range sortKeys {
 				if key[0] == '-' {
-					sortM.Set(key[1:], -1)
+					sortM = append(sortM, codekit.M{key: -1})
 				} else {
-					sortM.Set(key, 1)
+					sortM = append(sortM, codekit.M{key: 1})
 				}
 			}
 
