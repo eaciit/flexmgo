@@ -14,6 +14,7 @@ import (
 
 	"bufio"
 
+	"go.mongodb.org/mongo-driver/bson"
 	"go.mongodb.org/mongo-driver/bson/primitive"
 	"go.mongodb.org/mongo-driver/mongo"
 	"go.mongodb.org/mongo-driver/mongo/gridfs"
@@ -287,17 +288,17 @@ func (q *Query) Cursor(m M) df.ICursor {
 
 		if items, ok := parts[df.QueryOrder]; ok {
 			sortKeys := items.Value.([]string)
-			sortM := []codekit.M{}
+			sortDoc := bson.D{}
 			for _, key := range sortKeys {
 				if key[0] == '-' {
-					sortM = append(sortM, codekit.M{key: -1})
+					sortDoc = append(sortDoc, bson.E{key, -1})
 				} else {
-					sortM = append(sortM, codekit.M{key: 1})
+					sortDoc = append(sortDoc, bson.E{key, 1})
 				}
 			}
 
-			if len(sortM) > 0 {
-				opt.SetSort(sortM)
+			if len(sortDoc) > 0 {
+				opt.SetSort(sortDoc)
 			}
 		}
 
