@@ -291,7 +291,7 @@ func (q *Query) Cursor(m M) df.ICursor {
 			sortDoc := bson.D{}
 			for _, key := range sortKeys {
 				if key[0] == '-' {
-					sortDoc = append(sortDoc, bson.E{key, -1})
+					sortDoc = append(sortDoc, bson.E{key[1:], -1})
 				} else {
 					sortDoc = append(sortDoc, bson.E{key, 1})
 				}
