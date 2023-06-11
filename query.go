@@ -3,7 +3,6 @@ package flexmgo
 import (
 	"errors"
 	"fmt"
-	"io"
 	"strings"
 
 	"git.kanosolution.net/kano/dbflex"
@@ -12,12 +11,8 @@ import (
 	"github.com/sebarcode/codekit"
 	. "github.com/sebarcode/codekit"
 
-	"bufio"
-
 	"go.mongodb.org/mongo-driver/bson"
-	"go.mongodb.org/mongo-driver/bson/primitive"
 	"go.mongodb.org/mongo-driver/mongo"
-	"go.mongodb.org/mongo-driver/mongo/gridfs"
 	"go.mongodb.org/mongo-driver/mongo/options"
 )
 
@@ -135,9 +130,9 @@ func (q *Query) Cursor(m M) df.ICursor {
 
 	aggrs, hasAggr := parts[df.QueryAggr]
 	groupby, hasGroup := parts[df.QueryGroup]
-	//commandParts, hasCommand := parts[df.QueryCommand]
 	commandParts, hasCommand := parts[df.QueryCommand]
 
+	// run simple aggregation
 	if hasAggr {
 		pipes := []M{}
 		items := aggrs.Value.([]*df.AggrItem)
@@ -190,6 +185,8 @@ func (q *Query) Cursor(m M) df.ICursor {
 					Set("query", where)
 			}
 		}
+
+		// run a specific command
 	} else if hasCommand {
 		cmdName := commandParts.Op
 		cmdValue := commandParts.Value
@@ -217,7 +214,6 @@ func (q *Query) Cursor(m M) df.ICursor {
 				}
 			}
 
-			//fmt.Println("pipe:", codekit.JsonString(pipes), "\n")
 			if cur, err = coll.Aggregate(conn.ctx, pipes, new(options.AggregateOptions).SetAllowDiskUse(true)); err != nil {
 				cursor.SetError(err)
 				return cursor
@@ -245,24 +241,11 @@ func (q *Query) Cursor(m M) df.ICursor {
 			return cursor
 
 		default:
-			cursor.SetError(fmt.Errorf("invalid command %v", cmdValue))
+			cursor.SetError(fmt.Errorf("invalid command %v", cmdName))
 			return cursor
 		}
-		/*
-			case "gfsfind":
-					b, err := gridfs.NewBucket(conn.db)
-					qry := q.db.GridFS(tablename).Find(where)
-					cursor.mgocursor = qry
-					cursor.mgoiter = qry.Iter()
-				case "pipe":
-					pipe, ok := m["pipe"]
-					if !ok {
-						cursor.SetError(fmt.Errorf("invalid command, calling pipe without pipe data"))
-						return cursor
-					}
 
-					cursor.mgoiter = coll.Pipe(pipe).AllowDiskUse().Iter()
-		*/
+		// basic find
 	} else {
 		opt := options.Find()
 		if items, ok := parts[df.QuerySelect]; ok {
@@ -449,148 +432,13 @@ func (q *Query) Execute(m M) (interface{}, error) {
 		return nil, err
 
 	case df.QueryCommand:
-		commands, ok := parts[df.QueryCommand]
-		if !ok {
-			return nil, fmt.Errorf("No command")
-		}
-
-		//mCommand := commands.Value.(codekit.M)
-		//cmd, _ :=
-		cmdValue := commands.Value
-		switch cmdValue.(type) {
-		case string:
-			commandTxt := cmdValue.(string)
-			if commandTxt == "" {
-				return nil, fmt.Errorf("No command")
-			}
-
-			var (
-				bucket      *gridfs.Bucket
-				gfsBuffSize int32
-				err         error
-			)
-			if strings.ToLower(commandTxt)[:3] == "gfs" {
-				gfsBuffSize = int32(m.Get("size", 1024).(int))
-				bucketOpt := new(options.BucketOptions)
-				bucketOpt.SetChunkSizeBytes(gfsBuffSize)
-				bucketOpt.SetName(tablename)
-				bucket, err = gridfs.NewBucket(conn.db, bucketOpt)
-				if err != nil {
-					return nil, fmt.Errorf("error prepare GridFS bucket. %s", err.Error())
-				}
-			}
-
-			if hasParm, parm := q.Command().HasAttr("CommandParm"); hasParm {
-				m = parm.(codekit.M)
-			}
-			switch strings.ToLower(commandTxt) {
-			case "gfswrite":
-				var reader io.Reader
-				gfsId, hasId := m["id"]
-				gfsMetadata, hasMetadata := m["metadata"]
-				gfsFileName := m.GetString("name")
-				reader = m.Get("source", nil).(io.Reader)
-				if reader == nil {
-					return nil, fmt.Errorf("invalid reader")
-				}
-
-				//-- check if file exist, delete if already exist
-				if hasId {
-					bucket.Delete(gfsId)
-				}
-
-				if !hasMetadata {
-					gfsMetadata = codekit.M{}
-				}
-				uploadOpt := new(options.UploadOptions)
-				uploadOpt.SetMetadata(gfsMetadata)
-				if gfsFileName == "" && hasId {
-					gfsFileName = gfsId.(string)
-				}
-				if gfsFileName == "" {
-					gfsFileName = codekit.RandomString(32)
-				}
-
-				var objId primitive.ObjectID
-				if hasId {
-					err = bucket.UploadFromStreamWithID(gfsId, gfsFileName, reader, uploadOpt)
-				} else {
-					objId, err = bucket.UploadFromStream(gfsFileName, reader, uploadOpt)
-				}
-				if err != nil {
-					return nil, fmt.Errorf("error upload file to GridFS. %s", err.Error())
-				}
-				return objId, nil
-
-			case "gfsread":
-				gfsId, hasId := m["id"]
-				gfsFileName := m.GetString("name")
-				if gfsFileName == "" && hasId {
-					gfsFileName = gfsId.(string)
-				}
-				dest := m.Get("output", &bufio.Writer{}).(io.Writer)
-				var err error
-
-				var ds *gridfs.DownloadStream
-				if hasId {
-					ds, err = bucket.OpenDownloadStream(gfsId)
-				} else {
-					ds, err = bucket.OpenDownloadStreamByName(gfsFileName)
-				}
-				defer ds.Close()
-
-				if err != nil {
-					return nil, fmt.Errorf("unable to open GFS %s-%s. %s", tablename, gfsFileName, err.Error())
-				}
-				defer ds.Close()
-
-				io.Copy(dest, ds)
-				return nil, nil
-
-			case "gfsremove", "gfsdelete":
-				gfsId, hasId := m["id"]
-				var err error
-				if hasId && gfsId != "" {
-					err = bucket.Delete(gfsId)
-				}
-				return nil, err
-
-			case "gfstruncate":
-				err := bucket.Drop()
-				return nil, err
-
-			case "distinct":
-				fieldName := m.GetString("field")
-				vs, err := coll.Distinct(conn.ctx, fieldName, where)
-				if err != nil {
-					return nil, err
-				}
-				return vs, nil
-
-			default:
-				return nil, fmt.Errorf("Invalid command: %v", commandTxt)
-			}
-
-		case codekit.M:
-			cmdM := cmdValue.(codekit.M)
-			sr := conn.db.RunCommand(conn.ctx, cmdM)
-			if sr.Err() != nil {
-				return nil, fmt.Errorf("unablet to run command. %s. Command: %s",
-					sr.Err().Error(), codekit.JsonString(cmdM))
-			}
-			return sr, nil
-
-		default:
-			return nil, fmt.Errorf("Unknown command %v", cmdValue)
-		}
-
+		return q.handleExecuteCommand(conn)
 	}
 	return nil, nil
 }
 
 func wrapTx(conn *Connection, fn func(ctx mongo.SessionContext) error) error {
 	var err error
-	//fmt.Println("Connection in tx", conn.IsTx(), " sess", conn.sess)
 	if conn.sess != nil {
 		err = mongo.WithSession(conn.ctx, conn.sess, func(sc mongo.SessionContext) error {
 			return fn(sc)
@@ -600,57 +448,3 @@ func wrapTx(conn *Connection, fn func(ctx mongo.SessionContext) error) error {
 	}
 	return err
 }
-
-/*
-func (q *Query) SetThis(q dbflex.IQuery) {
-	panic("not implemented")
-}
-
-func (q *Query) This() dbflex.IQuery {
-	panic("not implemented")
-}
-
-func (q *Query) BuildFilter(*dbflex.Filter) (interface{}, error) {
-	panic("not implemented")
-}
-
-func (q *Query) BuildCommand() (interface{}, error) {
-	panic("not implemented")
-}
-
-func (q *Query) Cursor(codekit.M) dbflex.ICursor {
-	panic("not implemented")
-}
-
-func (q *Query) Execute(codekit.M) (interface{}, error) {
-	panic("not implemented")
-}
-
-func (q *Query) SetConfig(string, interface{}) {
-	panic("not implemented")
-}
-
-func (q *Query) SetConfigM(codekit.M) {
-	panic("not implemented")
-}
-
-func (q *Query) Config(string, interface{}) interface{} {
-	panic("not implemented")
-}
-
-func (q *Query) ConfigRef(string, interface{}, interface{}) {
-	panic("not implemented")
-}
-
-func (q *Query) DeleteConfig(...string) {
-	panic("not implemented")
-}
-
-func (q *Query) Connection() dbflex.IConnection {
-	panic("not implemented")
-}
-
-func (q *Query) SetConnection(dbflex.IConnection) {
-	panic("not implemented")
-}
-*/

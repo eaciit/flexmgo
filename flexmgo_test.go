@@ -289,38 +289,6 @@ func TestMdbTrx(t *testing.T) {
 	})
 }
 
-/*
-func TestWatch(t *testing.T) {
-	cv.Convey("change stream", t, func() {
-		conn, err := connect()
-		cv.So(err, cv.ShouldBeNil)
-		defer conn.Close()
-
-		changed := make(chan codekit.M)
-		cmd := dbflex.From(tablename).Command("watch")
-		_, err = conn.Execute(cmd, codekit.M{}.
-			Set("fn", func(data codekit.M) {
-				changed <- data
-				close(changed)
-			}))
-		cv.So(err, cv.ShouldBeNil)
-
-		cv.Convey("validate", func() {
-			m := codekit.M{}
-			cmdGet := dbflex.From(tablename).Select().Where(dbflex.Eq("_id", "record-id-5"))
-			err := conn.Cursor(cmdGet, nil).SetCloseAfterFetch().Fetch(&m)
-			cv.So(err, cv.ShouldBeNil)
-
-			m.Set("title", "Test Change Stream")
-			_, err = conn.Execute(dbflex.From(tablename).Save(), codekit.M{}.Set("data", m))
-
-			changedData := <-changed
-			cv.So(changedData.GetString("title"), cv.ShouldEqual, "Test Change Stream")
-		})
-	})
-}
-*/
-
 func TestDeleteData(t *testing.T) {
 	cv.Convey("connect", t, func() {
 		conn, err := connect()
@@ -401,28 +369,36 @@ func TestGridFsUpdate(t *testing.T) {
 			buff := bytes.NewReader([]byte(data))
 			reader := bufio.NewReader(buff)
 
-			cmd := dbflex.From("fs").Command("GfsWrite", nil)
-			metadata := codekit.M{}.Set("data", "ini adalah meta")
-			_, err := conn.Execute(cmd, codekit.M{}.
+			metadata1 := codekit.M{}.Set("data", "ini adalah meta1")
+			cmd := dbflex.From("fs").Command("gfswrite", codekit.M{}.
 				Set("id", "doc1").
-				Set("metadata", metadata).
+				Set("metadata", metadata1).
 				Set("source", reader))
+			_, err := conn.Execute(cmd, nil)
+			cv.So(err, cv.ShouldBeNil)
+
+			metadata2 := codekit.M{}.Set("data", "ini adalah meta2")
+			cmd = dbflex.From("fs").Command("gfswrite", codekit.M{}.
+				Set("id", "doc2").
+				Set("metadata", metadata2).
+				Set("source", reader))
+			_, err = conn.Execute(cmd, nil)
 			cv.So(err, cv.ShouldBeNil)
 
 			cv.Convey("reading from grid", func() {
 				var buff bytes.Buffer
 				writer := bufio.NewWriter(&buff)
 
-				cmd := dbflex.From("fs").Command("gfsread", nil)
-				_, err := conn.Execute(cmd, codekit.M{}.
+				cmd := dbflex.From("fs").Command("gfsread", codekit.M{}.
 					Set("id", "doc1").
 					Set("output", writer))
+				_, err := conn.Execute(cmd, nil)
 				cv.So(err, cv.ShouldBeNil)
 				cv.So(string(data), cv.ShouldEqual, string(buff.Bytes()))
 
 				cv.Convey("delete grid", func() {
-					cmd := dbflex.From("fs").Command("gfsdelete", nil)
-					_, err := conn.Execute(cmd, codekit.M{}.Set("id", "doc1"))
+					cmd := dbflex.From("fs").Command("gfsdelete", codekit.M{}.Set("id", "doc1"))
+					_, err := conn.Execute(cmd, nil)
 					cv.So(err, cv.ShouldBeNil)
 				})
 			})
@@ -550,18 +526,3 @@ func (r *Record) GetID() ([]string, []interface{}) {
 func (r *Record) SetID(obj []interface{}) {
 	r.ID = obj[0].(string)
 }
-
-/*
-var demoConfig = {
-    _id: "rs",
-    members: [
-        { _id: 0,
-          host: 'localhost:27017',
-          priority: 10
-        },
-        { _id: 1,
-          host: 'localhost:27018'
-        }
-    ]
- };
-*/
