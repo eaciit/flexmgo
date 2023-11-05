@@ -9,4 +9,11 @@ func init() {
 		c.SetThis(c)
 		return c
 	})
+
+	dbflex.RegisterDriver("mongodb+srv", func(si *dbflex.ServerInfo) dbflex.IConnection {
+		c := new(Connection)
+		c.ServerInfo = *si
+		c.SetThis(c)
+		return c
+	})
 }

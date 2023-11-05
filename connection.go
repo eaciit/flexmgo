@@ -29,73 +29,74 @@ type Connection struct {
 }
 
 func (c *Connection) Connect() error {
-	configString := "?"
-	for k, v := range c.Config {
-		if strings.ToLower(k) == "authmechanism" && strings.ToLower(v.(string)) == "default" {
-			configString += k + "=SCRAM-SHA-256&"
-			continue
-		}
-		configString += k + "=" + v.(string) + "&"
-	}
+	var opts *options.ClientOptions
 
-	connURI := "mongodb://"
-
-	if c.User != "" {
-		authPrefix := c.User + ":" + c.Password
-		connURI += authPrefix + "@"
-	}
-	connURI += c.Host + "/"
-	connURI += configString
-
-	opts := options.Client().ApplyURI(connURI)
-	for k, v := range c.Config {
-		klow := strings.ToLower(k)
-		switch klow {
-		case "serverselectiontimeout":
-			opts.SetServerSelectionTimeout(
-				time.Duration(codekit.ToInt(v, codekit.RoundingAuto)) * time.Millisecond)
-
-		case "replicaset":
-			opts.SetReplicaSet(v.(string))
-			//opts.SetWriteConcern()
-
-		case "poolsize":
-			poolSize := codekit.ToInt(v.(string), codekit.RoundingAuto)
-			if poolSize > 0 {
-				opts.SetMaxPoolSize(uint64(poolSize))
+	if c.ServerInfo.ConnectionString == "" {
+		configString := "?"
+		for k, v := range c.Config {
+			if strings.ToLower(k) == "authmechanism" && strings.ToLower(v.(string)) == "default" {
+				configString += k + "=SCRAM-SHA-256&"
+				continue
 			}
+			configString += k + "=" + v.(string) + "&"
+		}
 
-		case "tlsinsecure":
-			opts.SetTLSConfig(&tls.Config{InsecureSkipVerify: true})
+		connURI := "mongodb://"
 
-		case "tlscertificate":
-			opts.SetTLSConfig(loadCerts(&tls.Config{}, strings.Split(v.(string), ",")...))
+		if c.User != "" {
+			authPrefix := c.User + ":" + c.Password
+			connURI += authPrefix + "@"
+		}
+		connURI += c.Host + "/"
+		connURI += configString
 
-		case "writeconcern":
-			wConcern := writeconcern.New(writeconcern.WMajority())
-			opts.SetWriteConcern(wConcern)
+		opts = options.Client().ApplyURI(connURI)
+		for k, v := range c.Config {
+			klow := strings.ToLower(k)
+			switch klow {
+			case "serverselectiontimeout":
+				opts.SetServerSelectionTimeout(
+					time.Duration(codekit.ToInt(v, codekit.RoundingAuto)) * time.Millisecond)
 
-		case "idle":
-			idle := codekit.ToInt(v.(string), codekit.RoundingAuto)
-			if idle > 0 {
-				opts.SetMaxConnIdleTime(time.Duration(idle) * time.Second)
+			case "replicaset":
+				opts.SetReplicaSet(v.(string))
+				//opts.SetWriteConcern()
+
+			case "poolsize":
+				poolSize := codekit.ToInt(v.(string), codekit.RoundingAuto)
+				if poolSize > 0 {
+					opts.SetMaxPoolSize(uint64(poolSize))
+				}
+
+			case "tlsinsecure":
+				opts.SetTLSConfig(&tls.Config{InsecureSkipVerify: true})
+
+			case "tlscertificate":
+				opts.SetTLSConfig(loadCerts(&tls.Config{}, strings.Split(v.(string), ",")...))
+
+			case "writeconcern":
+				wConcern := writeconcern.New(writeconcern.WMajority())
+				opts.SetWriteConcern(wConcern)
+
+			case "idle":
+				idle := codekit.ToInt(v.(string), codekit.RoundingAuto)
+				if idle > 0 {
+					opts.SetMaxConnIdleTime(time.Duration(idle) * time.Second)
+				}
 			}
 		}
+	} else {
+		opts = options.Client().ApplyURI(c.ServerInfo.ConnectionString)
 	}
 
-	//logger.Logger().Debugf("opts: %s", codekit.JsonString(opts))
-	client, err := mongo.NewClient(opts)
-	if err != nil {
-		return err
-	}
-
-	//logger.Logger().Debug("client generated: OK")
+	// logger.Logger().Debug("client generated: OK")
 	if c.ctx == nil {
 		c.ctx = context.TODO()
 	}
 
-	//logger.Logger().Debug("context generated: OK")
-	if err = client.Connect(c.ctx); err != nil {
+	//logger.Logger().Debugf("opts: %s", codekit.JsonString(opts))
+	client, err := mongo.Connect(c.ctx, opts)
+	if err != nil {
 		return err
 	}
 

@@ -57,6 +57,9 @@ func (q *Query) handleExecuteCommand(conn *Connection) (interface{}, error) {
 		gfsId, hasId := cmdParm["id"]
 		gfsMetadata, hasMetadata := cmdParm["metadata"]
 		gfsFileName := cmdParm.GetString("name")
+		if gfsFileName == "" {
+			gfsFileName = codekit.RandomString(32)
+		}
 		reader, readerOK := cmdParm.Get("source", nil).(io.Reader)
 		if !readerOK {
 			return nil, fmt.Errorf("invalid reader")
