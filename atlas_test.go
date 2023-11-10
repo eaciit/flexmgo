@@ -10,7 +10,7 @@ import (
 
 func TestAtlas(t *testing.T) {
 	convey.Convey("prepare db", t, func() {
-		connTxt := "mongodb+srv://readonly:Password.1@cluster0.lobvo.mongodb.net/appdb?retryWrites=true&w=majority"
+		connTxt := "mongodb+srv://coba-user:Password.1@cluster0.lobvo.mongodb.net/appdb?retryWrites=true&w=majority"
 		conn, err := dbflex.NewConnectionFromURI(connTxt, nil)
 		convey.So(err, convey.ShouldBeNil)
 

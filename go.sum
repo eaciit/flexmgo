@@ -1,7 +1,5 @@
-git.kanosolution.net/kano/dbflex v1.2.9 h1:6lto8XVLWoHMLIATE3ALGcCfkks2kAS+uUp7DyjX9xU=
-git.kanosolution.net/kano/dbflex v1.2.9/go.mod h1:FQZKWzBpYXNalY8syaXBjVBXyg58hIuUXQuIB08l7Zw=
-git.kanosolution.net/kano/dbflex v1.3.4-0.20231105001524-58de8c516292 h1:4ai+Jd7TO02dMvMJEDtFyPoFwJ4i1DRbpTAXfAWRVwc=
-git.kanosolution.net/kano/dbflex v1.3.4-0.20231105001524-58de8c516292/go.mod h1:mqgrdJe4IIfuLOMf1qj5kJUkL2ckiQ3XcA8LFQfE9k4=
+git.kanosolution.net/kano/dbflex v1.3.4 h1:DRjvrVQmNxttEieJcvih9g84JWl6wdZjGR9tCr4KmF8=
+git.kanosolution.net/kano/dbflex v1.3.4/go.mod h1:mqgrdJe4IIfuLOMf1qj5kJUkL2ckiQ3XcA8LFQfE9k4=
 github.com/ariefdarmawan/reflector v0.0.3 h1:qbfwP5iKMvdYBWRG2jZyoXRLPsGedJ1sNcC8bw+MhpY=
 github.com/ariefdarmawan/reflector v0.0.3/go.mod h1:xxeY7n6iT0q5pK4j3s8l2xo1CvmQgS2oYtj0lsV4eo4=
 github.com/ariefdarmawan/serde v0.1.1 h1:TIhTKKFfK4WfYcS/hW1nSD81Uqd1jkY9Xli8e/3h/MA=
