@@ -233,7 +233,7 @@ func (c *Connection) BeginTx() error {
 		return errors.New("tx is disabled")
 	}
 
-	wc := writeconcern.New(writeconcern.WMajority())
+	wc := writeconcern.Majority()
 	rc := readconcern.Snapshot()
 	txnOpts := options.Transaction().SetWriteConcern(wc).SetReadConcern(rc)
 
